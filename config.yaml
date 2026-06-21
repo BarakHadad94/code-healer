@@ -1,0 +1,9 @@
+# code-healer configuration
+
+model: claude-sonnet-4-6
+
+# Scenario B: agent runs a deep review when tests pass but changes touch these paths.
+sensitive_paths:
+  - auth/
+  - payments/
+  - db/queries/

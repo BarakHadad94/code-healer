@@ -1,0 +1,331 @@
+import asyncio
+import difflib
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, Optional
+
+from dotenv import load_dotenv
+from fastapi import BackgroundTasks, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+# Run uvicorn from the project root so these imports resolve:
+#   uvicorn backend.main:app --reload
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_PROJECT_ROOT / ".env")
+
+from agent.agent import run_healing_agent
+from backend.activation import ActivationReason, activation_label, decide_activation
+from backend.database import SessionLocal, create_tables
+from backend.models import HealingRun
+from backend.precheck import run_pytest_precheck
+
+app = FastAPI(title="code-healer")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # tighten in production
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Maps run_id → asyncio.Queue of log messages.
+# Each message: {"type": "log"|"diff"|"done"|"error", "message": str}
+_log_queues: Dict[str, asyncio.Queue] = {}
+
+_STALE_QUEUE_TTL = 600  # seconds — cleanup if no WebSocket ever connects
+
+
+async def _cleanup_stale_queue(run_id: str, delay: int = _STALE_QUEUE_TTL) -> None:
+    """Drop orphaned queues when the client never opens a WebSocket."""
+    await asyncio.sleep(delay)
+    _log_queues.pop(run_id, None)
+
+
+# ── Startup ──────────────────────────────────────────────────────────────────
+
+@app.on_event("startup")
+def on_startup() -> None:
+    create_tables()
+
+
+# ── Request / Response models ────────────────────────────────────────────────
+
+class TriggerRequest(BaseModel):
+    repo: str                       # e.g. "my-org/my-repo"
+    file_path: str                  # workspace-relative path to the broken file
+    error_log: str = ""             # optional; pre-check captures pytest output when tests fail
+    workspace: str                  # absolute path to the local workspace directory
+    changed_files: list[str] = []   # used for Scenario B (critical-path detection)
+
+
+class TriggerResponse(BaseModel):
+    run_id: str
+    ws_url: str
+    message: str
+
+
+class RunSummary(BaseModel):
+    id: str
+    repo: str
+    file_path: str
+    status: str
+    activation_reason: Optional[str] = None
+    iterations: Optional[int]
+    created_at: datetime
+    completed_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+# ── Routes ───────────────────────────────────────────────────────────────────
+
+@app.post("/trigger", response_model=TriggerResponse)
+async def trigger_healing(body: TriggerRequest, background_tasks: BackgroundTasks):
+    """
+    Entry point — simulates a GitHub webhook firing after a CI failure.
+    Returns immediately with a run_id; connect to ws_url to stream live logs.
+    """
+    run_id = str(uuid.uuid4())
+    _log_queues[run_id] = asyncio.Queue()
+    background_tasks.add_task(_healing_task, run_id, body)
+    return TriggerResponse(
+        run_id=run_id,
+        ws_url=f"/ws/logs/{run_id}",
+        message="Healing task queued",
+    )
+
+
+@app.get("/runs", response_model=list[RunSummary])
+def list_runs():
+    """Return all healing runs ordered newest-first (used by the dashboard history table)."""
+    with SessionLocal() as db:
+        return db.query(HealingRun).order_by(HealingRun.created_at.desc()).all()
+
+
+@app.get("/runs/{run_id}", response_model=RunSummary)
+def get_run(run_id: str):
+    with SessionLocal() as db:
+        run = db.get(HealingRun, run_id)
+        if run is None:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Run not found")
+        return run
+
+
+@app.get("/runs/{run_id}/diff")
+def get_run_diff(run_id: str):
+    """Return the raw unified diff for a completed run."""
+    with SessionLocal() as db:
+        run = db.get(HealingRun, run_id)
+        if run is None:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Run not found")
+        return {"diff": run.fix_diff}
+
+
+@app.websocket("/ws/logs/{run_id}")
+async def websocket_logs(websocket: WebSocket, run_id: str):
+    """
+    Streams structured log messages for a healing run.
+    Closes automatically when the agent emits a "done" or "error" message.
+    """
+    await websocket.accept()
+
+    if run_id not in _log_queues:
+        await websocket.send_json({"type": "error", "message": f"Unknown run_id: {run_id}"})
+        await websocket.close()
+        return
+
+    queue = _log_queues[run_id]
+    try:
+        while True:
+            msg = await queue.get()
+            await websocket.send_json(msg)
+            if msg.get("type") in ("done", "error", "skipped"):
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _log_queues.pop(run_id, None)
+
+
+# ── Background healing task ──────────────────────────────────────────────────
+
+async def _healing_task(run_id: str, body: TriggerRequest) -> None:
+    queue = _log_queues.get(run_id)
+    if queue is None:
+        return
+
+    async def log_callback(msg: dict) -> None:
+        if run_id in _log_queues:
+            await queue.put(msg)
+
+    _db_create_run(run_id, body)
+
+    # ── Phase 2: pytest pre-check (cheap gate before LLM) ───────────────────
+    await log_callback({"type": "log", "message": "Running pytest pre-check…"})
+    precheck = await run_pytest_precheck(body.workspace)
+
+    display = precheck.output if len(precheck.output) <= 800 else precheck.output[:800] + "\n…(truncated)"
+    await log_callback({"type": "log", "message": f"[Pre-check]\n{display}"})
+
+    if precheck.exit_code < 0 and precheck.output.startswith("ERROR:"):
+        await log_callback({
+            "type": "error",
+            "message": f"Pre-check could not run: {precheck.output}",
+        })
+        _db_set_activation(run_id, None)
+        _db_complete_run(run_id, {"status": "failed", "iterations": None}, None)
+        asyncio.create_task(_cleanup_stale_queue(run_id))
+        return
+
+    activation, sensitive_hits = decide_activation(
+        tests_passed=precheck.passed,
+        changed_files=body.changed_files,
+        file_path=body.file_path,
+    )
+    _db_set_activation(run_id, activation.value)
+    await log_callback({
+        "type": "log",
+        "message": f"Activation: {activation_label(activation.value)}",
+    })
+
+    if activation == ActivationReason.SKIPPED:
+        await log_callback({
+            "type": "skipped",
+            "message": "Pre-check passed — no sensitive paths touched, agent not invoked",
+        })
+        _db_complete_run(run_id, {"status": "skipped", "iterations": None}, None)
+        asyncio.create_task(_cleanup_stale_queue(run_id))
+        return
+
+    if activation == ActivationReason.SELF_HEAL:
+        await log_callback({
+            "type": "log",
+            "message": "Pre-check failed — activating self-heal agent…",
+        })
+        body = body.model_copy(update={"error_log": precheck.output})
+        agent_mode = "self_heal"
+    else:
+        await log_callback({
+            "type": "log",
+            "message": (
+                f"Sensitive paths touched: {', '.join(sensitive_hits)} "
+                "— activating deep-review agent…"
+            ),
+        })
+        agent_mode = "deep_review"
+
+    # Snapshot the file before the agent touches it so we can compute a diff later
+    target_path = Path(body.workspace) / body.file_path
+    original_content = _read_file_safe(target_path)
+
+    result = {"status": "failed", "iterations": None}
+    try:
+        result = await run_healing_agent(
+            file_path=body.file_path,
+            error_log=body.error_log,
+            workspace=body.workspace,
+            log_callback=log_callback,
+            mode=agent_mode,
+            sensitive_files=sensitive_hits if agent_mode == "deep_review" else None,
+        )
+    except Exception as e:
+        result = {"status": "failed", "iterations": None}
+        await log_callback({"type": "error", "message": f"Unexpected agent error: {e}"})
+        _db_complete_run(run_id, result, None)
+        asyncio.create_task(_cleanup_stale_queue(run_id))
+        return
+
+    # Compute diff BEFORE emitting the terminal message so the WebSocket is still open
+    modified_content = _read_file_safe(target_path)
+    diff = _compute_diff(original_content, modified_content, body.file_path)
+
+    print(f"[DEBUG] original ({len(original_content)} chars):\n{original_content[:300]}")
+    print(f"[DEBUG] modified ({len(modified_content)} chars):\n{modified_content[:300]}")
+    print(f"[DEBUG] diff length: {len(diff)}")
+
+    if diff:
+        await log_callback({"type": "diff", "message": diff})
+
+    if result.get("status") == "success":
+        await log_callback({"type": "done", "message": "Agent finished successfully"})
+    else:
+        await log_callback({
+            "type": "error",
+            "message": f"Could not fix automatically after {result.get('iterations', '?')} iterations",
+        })
+
+    _db_complete_run(run_id, result, diff, error_log=body.error_log)
+    # Keep the queue alive until the WebSocket drains it (avoids a race where
+    # the background task finishes before the browser connects).
+    asyncio.create_task(_cleanup_stale_queue(run_id))
+
+
+# ── DB helpers (sync — SQLite latency is negligible) ─────────────────────────
+
+def _db_set_activation(run_id: str, reason: Optional[str]) -> None:
+    with SessionLocal() as db:
+        run = db.get(HealingRun, run_id)
+        if run is None:
+            return
+        run.activation_reason = reason
+        db.commit()
+
+
+def _db_create_run(run_id: str, body: TriggerRequest) -> None:
+    with SessionLocal() as db:
+        db.add(HealingRun(
+            id=run_id,
+            repo=body.repo,
+            file_path=body.file_path,
+            error_log=body.error_log or "(pending pre-check)",
+            status="running",
+            created_at=datetime.utcnow(),
+        ))
+        db.commit()
+
+
+def _db_complete_run(
+    run_id: str,
+    result: dict,
+    diff: Optional[str],
+    error_log: Optional[str] = None,
+) -> None:
+    with SessionLocal() as db:
+        run = db.get(HealingRun, run_id)
+        if run is None:
+            return
+        run.status = result.get("status", "failed")
+        run.iterations = result.get("iterations")
+        run.fix_diff = diff or None
+        run.completed_at = datetime.utcnow()
+        if result.get("status") == "skipped":
+            run.error_log = "Pre-check passed — agent not invoked"
+        elif error_log:
+            run.error_log = error_log
+        db.commit()
+
+
+# ── Utilities ────────────────────────────────────────────────────────────────
+
+def _read_file_safe(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+def _compute_diff(original: str, modified: str, filename: str) -> str:
+    if original == modified:
+        return ""
+    lines_a = original.splitlines(keepends=True)
+    lines_b = modified.splitlines(keepends=True)
+    return "".join(difflib.unified_diff(
+        lines_a, lines_b,
+        fromfile=f"a/{filename}",
+        tofile=f"b/{filename}",
+    ))
