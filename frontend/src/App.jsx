@@ -107,6 +107,18 @@ export default function App() {
       setStatus('failed')
       setLogs(prev => [...prev, { type: 'error', message: 'WebSocket connection lost' }])
     }
+
+    ws.onclose = (event) => {
+      // A clean close (1000) means the server already sent a terminal
+      // message (done/error/skipped) and the UI is already up to date.
+      if (event.code === 1000) return
+      setStatus(prev => (prev === 'running' ? 'failed' : prev))
+      setLogs(prev => [
+        ...prev,
+        { type: 'error', message: 'Connection closed before the run finished streaming — refresh to see the final result in Run History.' },
+      ])
+      fetchHistory()
+    }
   }
 
   const badge = STATUS_BADGE[status]

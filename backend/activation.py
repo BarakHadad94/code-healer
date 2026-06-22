@@ -10,7 +10,7 @@ class ActivationReason(str, Enum):
 
 
 _ACTIVATION_LABELS = {
-    ActivationReason.SELF_HEAL: "Self-heal (tests failed)",
+    ActivationReason.SELF_HEAL: "Self-heal (tests/lint failed)",
     ActivationReason.DEEP_REVIEW: "Deep review (sensitive path)",
     ActivationReason.SKIPPED: "Skipped (tests green, no sensitive paths)",
 }

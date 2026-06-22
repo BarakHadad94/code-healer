@@ -118,9 +118,9 @@ Demo script is a **browser walkthrough** — it comes **after** UI polish (Phase
 ### Phase 3 — Features
 
 #### Must-have
-- [ ] **Git push-back** — after a successful heal, commit and push the fix to the repo (completes the original gatekeeper story)
-- [ ] **Wire `config.yaml` → agent** — read `model` from config instead of hardcoding in `agent.py`
-- [ ] **Linter in pre-check gate** — run ruff on the host (or sandbox) alongside pytest before activation decision
+- [x] **Git push-back** — after a successful heal, commit the fix to a local branch (completes the original gatekeeper story; scoped to demo/broken_code for now, push to GitHub remains manual)
+- [x] **Wire `config.yaml` → agent** — read `model` from config instead of hardcoding in `agent.py`
+- [x] **Linter in pre-check gate** — run ruff on the host (or sandbox) alongside pytest before activation decision
 
 #### Should-have
 - [ ] **Multi-file fix support** — agent can modify more than one file per run
@@ -269,7 +269,7 @@ code-healer/
 ```powershell
 # Terminal 1 — backend (loads .env automatically)
 cd code-healer
-uvicorn backend.main:app --reload --port 8000
+uvicorn backend.main:app --reload --reload-dir backend --reload-dir agent --port 8000
 
 # Terminal 2 — frontend
 cd code-healer/frontend
@@ -278,5 +278,11 @@ npm run dev
 # One-time: sandbox image
 docker build -t code-healer-sandbox ./sandbox-image
 ```
+
+`--reload-dir backend --reload-dir agent` scopes the file watcher to source code only.
+Without it, uvicorn also watches `demo/broken_code/`, and since both the demo bug
+injection and the agent's `write_file` tool edit `.py` files there, a healing run can
+trigger a server restart mid-run — silently dropping the WebSocket and freezing the
+dashboard's live log feed, even though the run completes successfully in the background.
 
 Dashboard: http://localhost:5173 — API proxied to http://localhost:8000

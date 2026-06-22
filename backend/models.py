@@ -19,5 +19,7 @@ class HealingRun(Base):
     activation_reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # "self_heal" | "deep_review" | "skipped"
     iterations: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    fix_branch: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # local git branch holding the healed fix, e.g. "fix/code-healer-ab12cd34"
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

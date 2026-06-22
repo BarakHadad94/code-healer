@@ -25,3 +25,7 @@ def load_config() -> dict[str, Any]:
 def get_sensitive_paths() -> list[str]:
     paths = load_config().get("sensitive_paths") or []
     return [str(p) for p in paths]
+
+
+def get_model() -> str:
+    return str(load_config().get("model") or _DEFAULTS["model"])

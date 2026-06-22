@@ -72,3 +72,59 @@ def _run_pytest_sync(workspace: str, timeout: int) -> PrecheckResult:
         output=prefix + output,
         exit_code=result.returncode,
     )
+
+
+async def run_ruff_precheck(workspace: str, timeout: int = _DEFAULT_TIMEOUT) -> PrecheckResult:
+    """
+    Run ruff in the workspace on the host (no Docker, no LLM).
+    Runs alongside the pytest pre-check, before the activation decision.
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None,
+        lambda: _run_ruff_sync(workspace, timeout),
+    )
+
+
+def _run_ruff_sync(workspace: str, timeout: int) -> PrecheckResult:
+    root = Path(workspace).resolve()
+    if not root.is_dir():
+        return PrecheckResult(
+            passed=False,
+            output=f"ERROR: Workspace not found: {workspace}",
+            exit_code=-1,
+        )
+
+    command = [sys.executable, "-m", "ruff", "check", "."]
+
+    try:
+        result = subprocess.run(
+            command,
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return PrecheckResult(
+            passed=False,
+            output=f"ERROR: ruff timed out after {timeout}s",
+            exit_code=-1,
+        )
+    except FileNotFoundError:
+        return PrecheckResult(
+            passed=False,
+            output="ERROR: ruff not found — is it installed on the host?",
+            exit_code=-1,
+        )
+
+    output = (result.stdout or "") + (result.stderr or "")
+    if result.returncode == 0:
+        return PrecheckResult(passed=True, output=output, exit_code=0)
+
+    prefix = f"[exit {result.returncode}]\n" if result.returncode != 0 else ""
+    return PrecheckResult(
+        passed=False,
+        output=prefix + output,
+        exit_code=result.returncode,
+    )

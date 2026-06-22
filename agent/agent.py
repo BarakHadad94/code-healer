@@ -1,11 +1,11 @@
 import anthropic
 from typing import Awaitable, Callable, Optional
 
+from backend.config_loader import get_model
 from .tools import TOOL_DEFINITIONS, execute_tool, set_workspace
 
 LogCallback = Callable[[dict], Awaitable[None]]
 
-_MODEL = "claude-sonnet-4-6"
 _MAX_TOKENS = 4096
 
 _SYSTEM_PROMPT_SELF_HEAL = """You are code-healer, an autonomous agent that diagnoses and fixes broken Python code.
@@ -62,6 +62,7 @@ async def run_healing_agent(
     """
     set_workspace(workspace)
     client = anthropic.AsyncAnthropic()
+    model = get_model()
 
     if mode == "deep_review":
         system = _SYSTEM_PROMPT_DEEP_REVIEW
@@ -89,7 +90,7 @@ async def run_healing_agent(
         await log_callback({"type": "log", "message": f"--- Iteration {iteration}/{max_iterations} ---"})
 
         response = await client.messages.create(
-            model=_MODEL,
+            model=model,
             max_tokens=_MAX_TOKENS,
             system=system,
             tools=TOOL_DEFINITIONS,
@@ -97,13 +98,13 @@ async def run_healing_agent(
         )
 
         # Emit any reasoning text from the model
-        for block in response.content:
-            if block.type == "text" and block.text.strip():
-                await log_callback({"type": "log", "message": block.text})
+        texts = [block.text for block in response.content if block.type == "text" and block.text.strip()]
+        for text in texts:
+            await log_callback({"type": "log", "message": text})
 
         # No tool calls → agent has concluded; caller sends "done" after computing diff
         if response.stop_reason == "end_turn":
-            return {"status": "success", "iterations": iteration}
+            return {"status": "success", "iterations": iteration, "summary": "\n\n".join(texts)}
 
         # Execute each tool call and collect results
         assistant_content = _serialize_content(response.content)

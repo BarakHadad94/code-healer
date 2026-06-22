@@ -33,3 +33,8 @@ def migrate_schema() -> None:
                 "ALTER TABLE healing_runs ADD COLUMN activation_reason VARCHAR"
             ))
             conn.commit()
+        if "fix_branch" not in cols:
+            conn.execute(text(
+                "ALTER TABLE healing_runs ADD COLUMN fix_branch VARCHAR"
+            ))
+            conn.commit()

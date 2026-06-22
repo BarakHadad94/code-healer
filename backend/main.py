@@ -19,8 +19,9 @@ load_dotenv(_PROJECT_ROOT / ".env")
 from agent.agent import run_healing_agent
 from backend.activation import ActivationReason, activation_label, decide_activation
 from backend.database import SessionLocal, create_tables
+from backend.git_pushback import create_fix_branch
 from backend.models import HealingRun
-from backend.precheck import run_pytest_precheck
+from backend.precheck import run_pytest_precheck, run_ruff_precheck
 
 app = FastAPI(title="code-healer")
 
@@ -74,6 +75,7 @@ class RunSummary(BaseModel):
     status: str
     activation_reason: Optional[str] = None
     iterations: Optional[int]
+    fix_branch: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime]
 
@@ -145,6 +147,7 @@ async def websocket_logs(websocket: WebSocket, run_id: str):
             msg = await queue.get()
             await websocket.send_json(msg)
             if msg.get("type") in ("done", "error", "skipped"):
+                await websocket.close(code=1000)
                 break
     except WebSocketDisconnect:
         pass
@@ -182,8 +185,32 @@ async def _healing_task(run_id: str, body: TriggerRequest) -> None:
         asyncio.create_task(_cleanup_stale_queue(run_id))
         return
 
+    # ── Phase 3: ruff pre-check (runs alongside pytest, before activation) ──
+    await log_callback({"type": "log", "message": "Running ruff pre-check…"})
+    lint_precheck = await run_ruff_precheck(body.workspace)
+
+    lint_display = (
+        lint_precheck.output if len(lint_precheck.output) <= 800
+        else lint_precheck.output[:800] + "\n…(truncated)"
+    )
+    await log_callback({"type": "log", "message": f"[Lint]\n{lint_display}"})
+
+    # An infra-level lint failure (ruff missing, timeout) shouldn't block the gate —
+    # only real lint violations do. Negative exit_code marks an infra issue.
+    lint_failed = not lint_precheck.passed and lint_precheck.exit_code >= 0
+    if not lint_precheck.passed and lint_precheck.exit_code < 0:
+        await log_callback({
+            "type": "log",
+            "message": f"Lint pre-check could not run, ignoring: {lint_precheck.output}",
+        })
+
+    combined_passed = precheck.passed and not lint_failed
+    combined_output = precheck.output
+    if lint_failed:
+        combined_output = (combined_output + "\n\n[Lint failures]\n" + lint_precheck.output).strip()
+
     activation, sensitive_hits = decide_activation(
-        tests_passed=precheck.passed,
+        tests_passed=combined_passed,
         changed_files=body.changed_files,
         file_path=body.file_path,
     )
@@ -207,7 +234,7 @@ async def _healing_task(run_id: str, body: TriggerRequest) -> None:
             "type": "log",
             "message": "Pre-check failed — activating self-heal agent…",
         })
-        body = body.model_copy(update={"error_log": precheck.output})
+        body = body.model_copy(update={"error_log": combined_output})
         agent_mode = "self_heal"
     else:
         await log_callback({
@@ -251,6 +278,17 @@ async def _healing_task(run_id: str, body: TriggerRequest) -> None:
     if diff:
         await log_callback({"type": "diff", "message": diff})
 
+    fix_branch = None
+    if result.get("status") == "success" and diff:
+        pushback = create_fix_branch(
+            workspace=body.workspace,
+            file_path=body.file_path,
+            run_id=run_id,
+            summary=result.get("summary", ""),
+        )
+        fix_branch = pushback.branch
+        await log_callback({"type": "log", "message": f"[Git push-back] {pushback.message}"})
+
     if result.get("status") == "success":
         await log_callback({"type": "done", "message": "Agent finished successfully"})
     else:
@@ -259,7 +297,7 @@ async def _healing_task(run_id: str, body: TriggerRequest) -> None:
             "message": f"Could not fix automatically after {result.get('iterations', '?')} iterations",
         })
 
-    _db_complete_run(run_id, result, diff, error_log=body.error_log)
+    _db_complete_run(run_id, result, diff, error_log=body.error_log, fix_branch=fix_branch)
     # Keep the queue alive until the WebSocket drains it (avoids a race where
     # the background task finishes before the browser connects).
     asyncio.create_task(_cleanup_stale_queue(run_id))
@@ -294,6 +332,7 @@ def _db_complete_run(
     result: dict,
     diff: Optional[str],
     error_log: Optional[str] = None,
+    fix_branch: Optional[str] = None,
 ) -> None:
     with SessionLocal() as db:
         run = db.get(HealingRun, run_id)
@@ -302,6 +341,7 @@ def _db_complete_run(
         run.status = result.get("status", "failed")
         run.iterations = result.get("iterations")
         run.fix_diff = diff or None
+        run.fix_branch = fix_branch
         run.completed_at = datetime.utcnow()
         if result.get("status") == "skipped":
             run.error_log = "Pre-check passed — agent not invoked"
