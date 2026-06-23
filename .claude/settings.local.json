@@ -44,7 +44,15 @@
       "Bash(python -c \"from backend.pricing import estimate_cost; print\\('cost for 1000 in / 500 out:', estimate_cost\\('claude-sonnet-4-6', 1000, 500\\)\\)\")",
       "Bash(python -c \"from agent.agent import run_healing_agent; print\\('agent.agent imports OK'\\)\")",
       "Bash(git branch *)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(git push *)",
+      "Bash(python -c \"import secrets; print\\(secrets.token_hex\\(32\\)\\)\")",
+      "Bash(rm -f /tmp/uvicorn_webhook.log)",
+      "Bash(uvicorn backend.main:app --port 8002)",
+      "Bash(curl *)",
+      "Bash(taskkill //F //PID 22240)",
+      "Bash(rm -f webhook_payload.json webhook_sig.txt)",
+      "Bash(git check-ignore *)"
     ]
   }
 }

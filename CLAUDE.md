@@ -125,11 +125,7 @@ Demo script is a **browser walkthrough** — it comes **after** UI polish (Phase
 #### Should-have
 - [x] **Multi-file fix support** — agent can modify more than one file per run
 - [x] **Token usage tracking per run** — log input/output tokens and estimated cost; show savings from skipped runs
-- [ ] **GitHub webhook trigger** — real `POST /trigger` from GitHub Actions / `repository_dispatch` (not just dashboard form)
-
-#### Skip (deferred — not planned for initial release)
-- [ ] **Slack notification** on successful/failed heal
-- [ ] **Mock agent mode** — run UI/flow tests without Anthropic API credits
+- [x] **GitHub webhook trigger** — `POST /webhook/github` with HMAC-SHA256 signature verification, queues the same healing pipeline as the dashboard form; sample CI workflow in `.github/workflows/notify-code-healer.yml` (not wired to a public deployment yet — see Phase 9)
 
 ---
 

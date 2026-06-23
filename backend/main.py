@@ -1,12 +1,15 @@
 import asyncio
 import difflib
+import hashlib
+import hmac
+import os
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -89,20 +92,56 @@ class RunSummary(BaseModel):
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 
-@app.post("/trigger", response_model=TriggerResponse)
-async def trigger_healing(body: TriggerRequest, background_tasks: BackgroundTasks):
-    """
-    Entry point — simulates a GitHub webhook firing after a CI failure.
-    Returns immediately with a run_id; connect to ws_url to stream live logs.
-    """
+def _queue_healing_run(
+    body: TriggerRequest,
+    background_tasks: BackgroundTasks,
+    message: str,
+) -> TriggerResponse:
     run_id = str(uuid.uuid4())
     _log_queues[run_id] = asyncio.Queue()
     background_tasks.add_task(_healing_task, run_id, body)
-    return TriggerResponse(
-        run_id=run_id,
-        ws_url=f"/ws/logs/{run_id}",
-        message="Healing task queued",
-    )
+    return TriggerResponse(run_id=run_id, ws_url=f"/ws/logs/{run_id}", message=message)
+
+
+@app.post("/trigger", response_model=TriggerResponse)
+async def trigger_healing(body: TriggerRequest, background_tasks: BackgroundTasks):
+    """
+    Manual entry point — used by the dashboard form to simulate a CI failure.
+    Returns immediately with a run_id; connect to ws_url to stream live logs.
+    """
+    return _queue_healing_run(body, background_tasks, "Healing task queued")
+
+
+@app.post("/webhook/github", response_model=TriggerResponse)
+async def github_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_hub_signature_256: Optional[str] = Header(None),
+):
+    """
+    Real entry point for CI — a GitHub Actions workflow step POSTs here on test
+    failure (see .github/workflows/notify-code-healer.yml). Verifies an HMAC-SHA256
+    signature over the raw body, the same convention GitHub itself uses for webhooks.
+    """
+    secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+    if not secret:
+        raise HTTPException(status_code=503, detail="GITHUB_WEBHOOK_SECRET not configured on the server")
+
+    raw_body = await request.body()
+
+    if not x_hub_signature_256:
+        raise HTTPException(status_code=401, detail="Missing X-Hub-Signature-256 header")
+
+    expected = "sha256=" + hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, x_hub_signature_256):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    try:
+        body = TriggerRequest.model_validate_json(raw_body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
+
+    return _queue_healing_run(body, background_tasks, "Healing task queued via GitHub webhook")
 
 
 @app.get("/runs", response_model=list[RunSummary])

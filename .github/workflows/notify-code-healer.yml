@@ -1,0 +1,64 @@
+# Sample CI integration for code-healer's real (non-dashboard) trigger path.
+#
+# This is a template, not wired to a live deployment yet — code-healer isn't
+# publicly deployed (see CLAUDE.md Phase 9). It shows the intended production
+# flow: when this workflow's tests fail, it POSTs a signed payload to
+# code-healer's /webhook/github endpoint, which verifies an HMAC-SHA256
+# signature (same convention GitHub itself uses for webhooks) before queuing
+# a healing run — exactly the same way the dashboard's "Start Healing" button
+# does internally.
+#
+# Required repo secrets, once code-healer is deployed:
+#   CODE_HEALER_WEBHOOK_URL    e.g. https://healer.example.com
+#   CODE_HEALER_WEBHOOK_SECRET must match GITHUB_WEBHOOK_SECRET in code-healer's .env
+#
+# Note: `workspace` below must be a path code-healer's host can read directly —
+# this template doesn't yet handle cloning the failing repo itself (no remote
+# checkout step exists in the backend yet).
+
+name: Notify code-healer on test failure
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run tests
+        id: tests
+        run: pytest
+        continue-on-error: true
+
+      - name: Notify code-healer on failure
+        if: steps.tests.outcome == 'failure'
+        env:
+          CODE_HEALER_WEBHOOK_URL: ${{ secrets.CODE_HEALER_WEBHOOK_URL }}
+          CODE_HEALER_WEBHOOK_SECRET: ${{ secrets.CODE_HEALER_WEBHOOK_SECRET }}
+        run: |
+          PAYLOAD=$(jq -n \
+            --arg repo "${{ github.repository }}" \
+            --arg workspace "/srv/code-healer/workspace/${{ github.event.repository.name }}" \
+            '{repo: $repo, file_path: "", workspace: $workspace, changed_files: [], error_log: "See the failed CI run for full output"}')
+
+          SIGNATURE="sha256=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 -hmac "$CODE_HEALER_WEBHOOK_SECRET" | sed 's/^.* //')"
+
+          curl -sf -X POST "$CODE_HEALER_WEBHOOK_URL/webhook/github" \
+            -H "Content-Type: application/json" \
+            -H "X-Hub-Signature-256: $SIGNATURE" \
+            -d "$PAYLOAD"
+
+      - name: Fail the build if tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
