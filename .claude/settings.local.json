@@ -39,7 +39,12 @@
       "Bash(curl -s -X POST http://127.0.0.1:8001/trigger -H 'Content-Type: application/json' -d '{\"repo\": \"demo/code-healer\", \"file_path\": \"calculator.py\", \"workspace\": \"__TRACKED_VAR__\", \"changed_files\": [\"calculator.py\"]}')",
       "Bash(curl -s http://127.0.0.1:8001/runs/00c8601d-d037-4940-9600-32591b2580c5)",
       "Bash(taskkill //F //PID 4396)",
-      "Bash(rm -rf backend/__pycache__ agent/__pycache__)"
+      "Bash(rm -rf backend/__pycache__ agent/__pycache__)",
+      "Skill(claude-api)",
+      "Bash(python -c \"from backend.pricing import estimate_cost; print\\('cost for 1000 in / 500 out:', estimate_cost\\('claude-sonnet-4-6', 1000, 500\\)\\)\")",
+      "Bash(python -c \"from agent.agent import run_healing_agent; print\\('agent.agent imports OK'\\)\")",
+      "Bash(git branch *)",
+      "Bash(git checkout *)"
     ]
   }
 }

@@ -14,13 +14,17 @@ You have been activated because a CI check failed. Work through the problem meth
 
 1. Read the failing file with read_file — never modify code you haven't read
 2. Analyse the error log the user provided and form a hypothesis
-3. Apply your fix with write_file
-4. Verify with run_tests — if tests still fail, analyse the new error and iterate
-5. Once tests pass, write a concise summary of what you changed and why
+3. If the root cause lives in another file (a shared helper, an imported module, a config
+   file), use list_files/read_file to find it and fix it there too — you are not limited
+   to the single file that triggered the failure
+4. Apply your fix with write_file (one call per file that needs changing)
+5. Verify with run_tests — if tests still fail, analyse the new error and iterate
+6. Once tests pass, write a concise summary of what you changed, in which files, and why
 
 Rules:
 - Read before you write — always
 - After every write_file, call run_tests to confirm the fix
+- Only touch files that are actually part of the fix — don't make unrelated edits
 - If run_linter surfaces issues unrelated to the original error, leave them; stay focused
 - If you genuinely cannot fix the issue, explain what you tried and why it is difficult
 - Keep reasoning clear and brief — the developer is watching your steps in real time"""
@@ -35,8 +39,9 @@ Your job is a semantic security and correctness review — not fixing a failing 
    unsafe defaults, secrets in code, broken session/auth logic
 3. Use run_linter on reviewed files when helpful
 4. Run run_tests to confirm you have not broken the green build
-5. If you find a clear, safe improvement, apply a minimal fix with write_file and re-run tests
-6. End with a concise review summary: risks found, severity, and any changes made
+5. If you find a clear, safe improvement, apply a minimal fix with write_file — across as many
+   of the flagged files as genuinely need it — and re-run tests
+6. End with a concise review summary: risks found, severity, and which files you changed
 
 Rules:
 - Do not make drive-by refactors — stay focused on security and correctness in sensitive code
@@ -86,6 +91,10 @@ async def run_healing_agent(
         {"role": "user", "content": user_content},
     ]
 
+    total_input_tokens = 0
+    total_output_tokens = 0
+    files_written: list[str] = []
+
     for iteration in range(1, max_iterations + 1):
         await log_callback({"type": "log", "message": f"--- Iteration {iteration}/{max_iterations} ---"})
 
@@ -97,6 +106,9 @@ async def run_healing_agent(
             messages=messages,
         )
 
+        total_input_tokens += response.usage.input_tokens
+        total_output_tokens += response.usage.output_tokens
+
         # Emit any reasoning text from the model
         texts = [block.text for block in response.content if block.type == "text" and block.text.strip()]
         for text in texts:
@@ -104,7 +116,14 @@ async def run_healing_agent(
 
         # No tool calls → agent has concluded; caller sends "done" after computing diff
         if response.stop_reason == "end_turn":
-            return {"status": "success", "iterations": iteration, "summary": "\n\n".join(texts)}
+            return {
+                "status": "success",
+                "iterations": iteration,
+                "summary": "\n\n".join(texts),
+                "input_tokens": total_input_tokens,
+                "output_tokens": total_output_tokens,
+                "files_changed": list(dict.fromkeys(files_written)),
+            }
 
         # Execute each tool call and collect results
         assistant_content = _serialize_content(response.content)
@@ -118,6 +137,9 @@ async def run_healing_agent(
                 "type": "log",
                 "message": f"[Tool] {block.name}  args={block.input}",
             })
+
+            if block.name == "write_file" and isinstance(block.input.get("path"), str):
+                files_written.append(block.input["path"])
 
             result = await execute_tool(block.name, block.input)
 
@@ -134,7 +156,13 @@ async def run_healing_agent(
         messages.append({"role": "assistant", "content": assistant_content})
         messages.append({"role": "user", "content": tool_results})
 
-    return {"status": "failed", "iterations": max_iterations}
+    return {
+        "status": "failed",
+        "iterations": max_iterations,
+        "input_tokens": total_input_tokens,
+        "output_tokens": total_output_tokens,
+        "files_changed": list(dict.fromkeys(files_written)),
+    }
 
 
 def _serialize_content(blocks) -> list[dict]:

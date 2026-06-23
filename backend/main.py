@@ -18,10 +18,12 @@ load_dotenv(_PROJECT_ROOT / ".env")
 
 from agent.agent import run_healing_agent
 from backend.activation import ActivationReason, activation_label, decide_activation
+from backend.config_loader import get_model
 from backend.database import SessionLocal, create_tables
-from backend.git_pushback import create_fix_branch
+from backend.git_pushback import create_fix_branch, git_diff
 from backend.models import HealingRun
 from backend.precheck import run_pytest_precheck, run_ruff_precheck
+from backend.pricing import estimate_cost
 
 app = FastAPI(title="code-healer")
 
@@ -76,6 +78,9 @@ class RunSummary(BaseModel):
     activation_reason: Optional[str] = None
     iterations: Optional[int]
     fix_branch: Optional[str] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    estimated_cost_usd: Optional[float] = None
     created_at: datetime
     completed_at: Optional[datetime]
 
@@ -221,6 +226,12 @@ async def _healing_task(run_id: str, body: TriggerRequest) -> None:
     })
 
     if activation == ActivationReason.SKIPPED:
+        avg_cost = _average_agent_run_cost()
+        if avg_cost:
+            await log_callback({
+                "type": "log",
+                "message": f"Estimated savings: ~${avg_cost:.4f} (avg. cost of past agent runs, not spent)",
+            })
         await log_callback({
             "type": "skipped",
             "message": "Pre-check passed — no sensitive paths touched, agent not invoked",
@@ -267,22 +278,35 @@ async def _healing_task(run_id: str, body: TriggerRequest) -> None:
         asyncio.create_task(_cleanup_stale_queue(run_id))
         return
 
-    # Compute diff BEFORE emitting the terminal message so the WebSocket is still open
-    modified_content = _read_file_safe(target_path)
-    diff = _compute_diff(original_content, modified_content, body.file_path)
-
-    print(f"[DEBUG] original ({len(original_content)} chars):\n{original_content[:300]}")
-    print(f"[DEBUG] modified ({len(modified_content)} chars):\n{modified_content[:300]}")
-    print(f"[DEBUG] diff length: {len(diff)}")
+    # Compute diff BEFORE emitting the terminal message so the WebSocket is still open.
+    # git diff covers multiple changed files natively; fall back to a single-file
+    # difflib comparison for non-git workspaces or if the agent reported no files.
+    files_changed: list[str] = result.get("files_changed") or []
+    diff = git_diff(body.workspace, files_changed) if files_changed else None
+    if diff is None:
+        modified_content = _read_file_safe(target_path)
+        diff = _compute_diff(original_content, modified_content, body.file_path)
+        if diff and not files_changed:
+            files_changed = [body.file_path]
 
     if diff:
         await log_callback({"type": "diff", "message": diff})
+    if len(files_changed) > 1:
+        await log_callback({"type": "log", "message": f"[Files changed] {', '.join(files_changed)}"})
+
+    input_tokens = result.get("input_tokens", 0)
+    output_tokens = result.get("output_tokens", 0)
+    cost = estimate_cost(get_model(), input_tokens, output_tokens)
+    await log_callback({
+        "type": "log",
+        "message": f"[Token usage] input={input_tokens} output={output_tokens} est. cost=${cost:.4f}",
+    })
 
     fix_branch = None
-    if result.get("status") == "success" and diff:
+    if result.get("status") == "success" and diff and files_changed:
         pushback = create_fix_branch(
             workspace=body.workspace,
-            file_path=body.file_path,
+            file_paths=files_changed,
             run_id=run_id,
             summary=result.get("summary", ""),
         )
@@ -297,7 +321,14 @@ async def _healing_task(run_id: str, body: TriggerRequest) -> None:
             "message": f"Could not fix automatically after {result.get('iterations', '?')} iterations",
         })
 
-    _db_complete_run(run_id, result, diff, error_log=body.error_log, fix_branch=fix_branch)
+    _db_complete_run(
+        run_id, result, diff,
+        error_log=body.error_log,
+        fix_branch=fix_branch,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        estimated_cost_usd=cost,
+    )
     # Keep the queue alive until the WebSocket drains it (avoids a race where
     # the background task finishes before the browser connects).
     asyncio.create_task(_cleanup_stale_queue(run_id))
@@ -333,6 +364,9 @@ def _db_complete_run(
     diff: Optional[str],
     error_log: Optional[str] = None,
     fix_branch: Optional[str] = None,
+    input_tokens: Optional[int] = None,
+    output_tokens: Optional[int] = None,
+    estimated_cost_usd: Optional[float] = None,
 ) -> None:
     with SessionLocal() as db:
         run = db.get(HealingRun, run_id)
@@ -342,12 +376,27 @@ def _db_complete_run(
         run.iterations = result.get("iterations")
         run.fix_diff = diff or None
         run.fix_branch = fix_branch
+        run.input_tokens = input_tokens
+        run.output_tokens = output_tokens
+        run.estimated_cost_usd = estimated_cost_usd
         run.completed_at = datetime.utcnow()
         if result.get("status") == "skipped":
             run.error_log = "Pre-check passed — agent not invoked"
         elif error_log:
             run.error_log = error_log
         db.commit()
+
+
+def _average_agent_run_cost() -> Optional[float]:
+    """Average estimated_cost_usd across past runs that actually invoked the agent."""
+    with SessionLocal() as db:
+        costs = [
+            c for (c,) in db.query(HealingRun.estimated_cost_usd)
+                .filter(HealingRun.estimated_cost_usd.isnot(None))
+                .filter(HealingRun.estimated_cost_usd > 0)
+                .all()
+        ]
+        return sum(costs) / len(costs) if costs else None
 
 
 # ── Utilities ────────────────────────────────────────────────────────────────

@@ -123,8 +123,8 @@ Demo script is a **browser walkthrough** — it comes **after** UI polish (Phase
 - [x] **Linter in pre-check gate** — run ruff on the host (or sandbox) alongside pytest before activation decision
 
 #### Should-have
-- [ ] **Multi-file fix support** — agent can modify more than one file per run
-- [ ] **Token usage tracking per run** — log input/output tokens and estimated cost; show savings from skipped runs
+- [x] **Multi-file fix support** — agent can modify more than one file per run
+- [x] **Token usage tracking per run** — log input/output tokens and estimated cost; show savings from skipped runs
 - [ ] **GitHub webhook trigger** — real `POST /trigger` from GitHub Actions / `repository_dispatch` (not just dashboard form)
 
 #### Skip (deferred — not planned for initial release)

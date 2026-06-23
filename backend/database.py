@@ -38,3 +38,8 @@ def migrate_schema() -> None:
                 "ALTER TABLE healing_runs ADD COLUMN fix_branch VARCHAR"
             ))
             conn.commit()
+        if "input_tokens" not in cols:
+            conn.execute(text("ALTER TABLE healing_runs ADD COLUMN input_tokens INTEGER"))
+            conn.execute(text("ALTER TABLE healing_runs ADD COLUMN output_tokens INTEGER"))
+            conn.execute(text("ALTER TABLE healing_runs ADD COLUMN estimated_cost_usd FLOAT"))
+            conn.commit()
