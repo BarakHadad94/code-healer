@@ -15,13 +15,16 @@
 # Note: `workspace` below must be a path code-healer's host can read directly —
 # this template doesn't yet handle cloning the failing repo itself (no remote
 # checkout step exists in the backend yet).
+#
+# Manual-trigger only for now (workflow_dispatch) — this repo has no unit tests
+# yet (Phase 4) and no CODE_HEALER_WEBHOOK_URL configured, so running it on
+# every push would just fail the build and spam GitHub's failure-notification
+# emails for no reason. Switch back to `push`/`pull_request` once both exist.
 
 name: Notify code-healer on test failure
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
