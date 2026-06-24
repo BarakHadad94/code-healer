@@ -140,6 +140,15 @@ async def github_webhook(
     return _queue_healing_run(body, background_tasks, "Healing task queued via GitHub webhook")
 
 
+@app.get("/demo/workspaces")
+def demo_workspaces():
+    """Absolute paths to the two demo workspaces — used by the dashboard form presets."""
+    return {
+        "broken": str(_PROJECT_ROOT / "demo" / "broken_code"),
+        "clean":  str(_PROJECT_ROOT / "demo" / "clean_code"),
+    }
+
+
 @app.get("/runs", response_model=list[RunSummary])
 def list_runs():
     """Return all healing runs ordered newest-first (used by the dashboard history table)."""

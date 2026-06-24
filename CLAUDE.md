@@ -145,11 +145,11 @@ Code quality, security, and structure. No dashboard work, no servers.
 
 Dashboard improvements only.
 
-- [ ] **Click run history → load diff** — reopen past runs from the history table
-- [ ] **Show activation reason on live run** — not only in history after completion
-- [ ] **Form presets** — quick buttons for demo scenarios (calculator self-heal, auth deep review, green skip)
-- [ ] **Empty / loading / error states** — WebSocket lost, no runs yet, pre-check in progress
-- [ ] **Visual pass** — spacing, typography, status colors (light polish)
+- [x] **Click run history → load diff** — reopen past runs from the history table
+- [x] **Show activation reason on live run** — not only in history after completion
+- [x] **Form presets** — quick buttons for demo scenarios (calculator self-heal, auth deep review, green skip)
+- [x] **Empty / loading / error states** — WebSocket lost, no runs yet, pre-check in progress
+- [x] **Visual pass** — spacing, typography, status colors (light polish)
 
 ---
 

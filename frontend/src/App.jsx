@@ -37,17 +37,42 @@ export default function App() {
   const [diff, setDiff] = useState('')
   const [status, setStatus] = useState('idle')
   const [runs, setRuns] = useState([])
+  const [selectedRun, setSelectedRun] = useState(null)
+  const [historicalDiff, setHistoricalDiff] = useState('')
+  const [activationReason, setActivationReason] = useState(null)
+  const [demoWorkspaces, setDemoWorkspaces] = useState(null)
+  const [runsLoading, setRunsLoading] = useState(true)
+  const [runsError, setRunsError] = useState(false)
   const wsRef = useRef(null)
 
   useEffect(() => {
     fetchHistory()
+    fetch('/demo/workspaces').then(r => r.json()).then(setDemoWorkspaces).catch(() => {})
   }, [])
 
   function fetchHistory() {
+    setRunsLoading(true)
+    setRunsError(false)
     fetch('/runs')
-      .then(r => r.json())
-      .then(setRuns)
-      .catch(() => {})
+      .then(r => { if (!r.ok) throw new Error(); return r.json() })
+      .then(data => { setRuns(data); setRunsLoading(false) })
+      .catch(() => { setRunsError(true); setRunsLoading(false) })
+  }
+
+  async function handleRunClick(run) {
+    if (selectedRun?.id === run.id) {
+      setSelectedRun(null)
+      setHistoricalDiff('')
+      return
+    }
+    setSelectedRun(run)
+    try {
+      const res = await fetch(`/runs/${run.id}/diff`)
+      const data = await res.json()
+      setHistoricalDiff(data.diff || '')
+    } catch {
+      setHistoricalDiff('')
+    }
   }
 
   async function startHealing() {
@@ -55,6 +80,7 @@ export default function App() {
     setLogs([])
     setDiff('')
     setStatus('running')
+    setActivationReason(null)
 
     let runId
     try {
@@ -70,11 +96,15 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || `Server error ${res.status}`)
+      }
       const data = await res.json()
       runId = data.run_id
     } catch (e) {
       setStatus('failed')
-      setLogs([{ type: 'error', message: `Failed to reach backend: ${e.message}` }])
+      setLogs([{ type: 'error', message: `Could not start run: ${e.message}` }])
       return
     }
 
@@ -84,7 +114,9 @@ export default function App() {
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data)
-      if (msg.type === 'diff') {
+      if (msg.type === 'activation') {
+        setActivationReason(msg.message)
+      } else if (msg.type === 'diff') {
         setDiff(msg.message)
       } else if (msg.type === 'done') {
         setStatus('success')
@@ -127,8 +159,12 @@ export default function App() {
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 20px' }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.5px' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        paddingBottom: 20, marginBottom: 24,
+        borderBottom: '1px solid #21262d',
+      }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.5px' }}>
           ⚕ code-healer
         </h1>
         <span style={{
@@ -137,6 +173,17 @@ export default function App() {
         }}>
           {badge.label}
         </span>
+        {activationReason && (() => {
+          const ab = activationBadge(activationReason)
+          return (
+            <span style={{
+              padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+              background: ab.bg, color: ab.color,
+            }}>
+              {ab.label}
+            </span>
+          )
+        })()}
       </div>
 
       {/* Trigger form */}
@@ -147,6 +194,38 @@ export default function App() {
         <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8b949e', marginBottom: 14, textTransform: 'uppercase', letterSpacing: 1 }}>
           Trigger Healing Run
         </h2>
+
+        {demoWorkspaces && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            {[
+              {
+                label: '⚡ Self-heal',
+                title: 'Scenario A — broken calculator, agent fixes it',
+                fields: { repo: 'demo/repo', file_path: 'calculator.py', workspace: demoWorkspaces.broken, changed_files: '', error_log: '' },
+              },
+              {
+                label: '🔍 Deep review',
+                title: 'Scenario B — tests pass, sensitive auth path touched',
+                fields: { repo: 'demo/repo', file_path: 'auth/session.py', workspace: demoWorkspaces.clean, changed_files: 'auth/session.py', error_log: '' },
+              },
+              {
+                label: '✓ Skip',
+                title: 'Scenario C — tests pass, no sensitive paths',
+                fields: { repo: 'demo/repo', file_path: 'utils.py', workspace: demoWorkspaces.clean, changed_files: '', error_log: '' },
+              },
+            ].map(({ label, title, fields }) => (
+              <button
+                key={label}
+                title={title}
+                onClick={() => setForm(fields)}
+                style={{ background: '#21262d', color: '#8b949e', border: '1px solid #30363d', fontSize: 12, padding: '4px 12px' }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
           <label style={labelStyle}>
             Repo
@@ -201,14 +280,38 @@ export default function App() {
       </div>
 
       {/* Log feed + Diff view */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 28 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 32 }}>
         <div>
-          <SectionLabel>Agent Reasoning</SectionLabel>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <SectionLabel style={{ marginBottom: 0 }}>Agent Reasoning</SectionLabel>
+            {status === 'running' && !activationReason && (
+              <span style={{ fontSize: 11, color: '#d29922' }}>Pre-check running…</span>
+            )}
+            {status === 'running' && activationReason && (
+              <span style={{ fontSize: 11, color: '#58a6ff' }}>Agent running…</span>
+            )}
+          </div>
           <LogFeed logs={logs} />
         </div>
         <div>
-          <SectionLabel>Code Diff</SectionLabel>
-          <DiffView diff={diff} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <SectionLabel style={{ marginBottom: 0 }}>Code Diff</SectionLabel>
+            {selectedRun && (
+              <span style={{ fontSize: 11, color: '#8b949e' }}>
+                — {selectedRun.file_path} · {new Date(selectedRun.created_at).toLocaleString()}
+                <button
+                  onClick={() => { setSelectedRun(null); setHistoricalDiff('') }}
+                  style={{
+                    marginLeft: 8, background: 'none', border: 'none',
+                    color: '#58a6ff', cursor: 'pointer', fontSize: 11, padding: 0,
+                  }}
+                >
+                  ✕ live
+                </button>
+              </span>
+            )}
+          </div>
+          <DiffView diff={selectedRun ? historicalDiff : diff} />
         </div>
       </div>
 
@@ -219,8 +322,16 @@ export default function App() {
           background: '#161b22', border: '1px solid #30363d',
           borderRadius: 8, overflow: 'hidden',
         }}>
-          {runs.length === 0 ? (
-            <p style={{ padding: '20px 16px', color: '#484f58' }}>No runs yet.</p>
+          {runsLoading ? (
+            <p style={{ padding: '20px 16px', color: '#484f58' }}>Loading…</p>
+          ) : runsError ? (
+            <p style={{ padding: '20px 16px', color: '#f85149' }}>
+              Could not load run history — is the backend running?
+            </p>
+          ) : runs.length === 0 ? (
+            <p style={{ padding: '20px 16px', color: '#484f58' }}>
+              No runs yet — pick a preset above and click Start Healing.
+            </p>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -232,7 +343,17 @@ export default function App() {
               </thead>
               <tbody>
                 {runs.map(run => (
-                  <tr key={run.id} style={{ borderBottom: '1px solid #21262d' }}>
+                  <tr
+                    key={run.id}
+                    onClick={() => handleRunClick(run)}
+                    style={{
+                      borderBottom: '1px solid #21262d',
+                      cursor: 'pointer',
+                      background: selectedRun?.id === run.id ? '#1c2128' : 'transparent',
+                    }}
+                    onMouseEnter={e => { if (selectedRun?.id !== run.id) e.currentTarget.style.background = '#161b22' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = selectedRun?.id === run.id ? '#1c2128' : 'transparent' }}
+                  >
                     <td style={tdStyle}>{run.repo}</td>
                     <td style={{ ...tdStyle, fontFamily: 'Cascadia Code, monospace' }}>{run.file_path}</td>
                     <td style={tdStyle}>
@@ -267,9 +388,9 @@ export default function App() {
   )
 }
 
-function SectionLabel({ children }) {
+function SectionLabel({ children, style }) {
   return (
-    <p style={{ fontSize: 11, fontWeight: 600, color: '#8b949e', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+    <p style={{ fontSize: 12, fontWeight: 600, color: '#6e7681', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8, ...style }}>
       {children}
     </p>
   )

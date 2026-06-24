@@ -84,6 +84,7 @@ async def run_healing_task(run_id: str, body) -> None:
         file_path=body.file_path,
     )
     _db_set_activation(run_id, activation.value)
+    await log_callback({"type": "activation", "message": activation.value})
     await log_callback({
         "type": "log",
         "message": f"Activation: {activation_label(activation.value)}",

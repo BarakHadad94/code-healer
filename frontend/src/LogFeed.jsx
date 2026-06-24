@@ -1,9 +1,15 @@
 import { useEffect, useRef } from 'react'
 
-const TYPE_STYLES = {
-  log:   { color: '#e6edf3' },
-  done:  { color: '#3fb950', fontWeight: 600 },
-  error: { color: '#f85149', fontWeight: 600 },
+function styleForMsg(msg) {
+  if (msg.type === 'done')  return { color: '#3fb950', fontWeight: 600 }
+  if (msg.type === 'error') return { color: '#f85149', fontWeight: 600 }
+  if (msg.type === 'skipped') return { color: '#d29922', fontWeight: 600 }
+  const text = msg.message || ''
+  if (text.startsWith('[Tool]'))   return { color: '#79c0ff' }
+  if (text.startsWith('[Result]')) return { color: '#6e7681', fontSize: 12 }
+  if (text.startsWith('['))        return { color: '#8b949e', fontSize: 12 }
+  if (text.startsWith('---'))      return { color: '#3d444d', fontSize: 12 }
+  return { color: '#e6edf3' }
 }
 
 export default function LogFeed({ logs }) {
@@ -19,18 +25,18 @@ export default function LogFeed({ logs }) {
       border: '1px solid #30363d',
       borderRadius: 8,
       padding: '12px 16px',
-      height: 380,
+      height: 400,
       overflowY: 'auto',
       fontFamily: 'Cascadia Code, Fira Code, Consolas, monospace',
       fontSize: 13,
-      lineHeight: 1.6,
+      lineHeight: 1.65,
     }}>
       {logs.length === 0 ? (
-        <span style={{ color: '#484f58' }}>Waiting for healing run…</span>
+        <span style={{ color: '#3d444d' }}>Waiting for healing run…</span>
       ) : (
         logs.map((msg, i) => (
-          <div key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', ...TYPE_STYLES[msg.type] }}>
-            <span style={{ color: '#484f58', userSelect: 'none' }}>{'› '}</span>
+          <div key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', ...styleForMsg(msg) }}>
+            <span style={{ color: '#3d444d', userSelect: 'none' }}>{'› '}</span>
             {msg.message}
           </div>
         ))

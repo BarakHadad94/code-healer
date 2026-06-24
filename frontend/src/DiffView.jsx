@@ -22,15 +22,15 @@ export default function DiffView({ diff }) {
         border: '1px solid #30363d',
         borderRadius: 8,
         padding: '12px 16px',
-        height: 380,
+        height: 400,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        color: '#484f58',
+        color: '#3d444d',
         fontFamily: 'Cascadia Code, Fira Code, Consolas, monospace',
         fontSize: 13,
       }}>
-        Diff will appear here after a successful heal
+        Diff will appear here after healing
       </div>
     )
   }
@@ -42,7 +42,7 @@ export default function DiffView({ diff }) {
       background: '#161b22',
       border: '1px solid #30363d',
       borderRadius: 8,
-      height: 380,
+      height: 400,
       overflowY: 'auto',
       fontFamily: 'Cascadia Code, Fira Code, Consolas, monospace',
       fontSize: 13,

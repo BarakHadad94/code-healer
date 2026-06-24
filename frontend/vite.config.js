@@ -7,6 +7,7 @@ export default defineConfig({
     proxy: {
       '/trigger': 'http://localhost:8000',
       '/runs': 'http://localhost:8000',
+      '/demo': 'http://localhost:8000',
       '/ws': {
         target: 'ws://localhost:8000',
         ws: true,
