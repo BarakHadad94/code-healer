@@ -3,6 +3,7 @@ from pathlib import Path
 
 import docker
 import docker.errors
+import requests.exceptions
 
 _IMAGE = "code-healer-sandbox"
 _DEFAULT_TIMEOUT = 60  # seconds per container run
@@ -62,6 +63,18 @@ def _run_container_sync(command: list[str], workspace: str, timeout: int) -> str
             f"ERROR: Docker image '{_IMAGE}' not found.\n"
             "Build it first:\n"
             "  docker build -t code-healer-sandbox ./sandbox-image"
+        )
+    except docker.errors.APIError as e:
+        return f"ERROR: Docker API error: {e.explanation or e}"
+    except docker.errors.DockerException:
+        return (
+            "ERROR: Cannot connect to Docker daemon. "
+            "Make sure Docker Desktop is running and try again."
+        )
+    except requests.exceptions.ReadTimeout:
+        return (
+            f"ERROR: Container timed out after {timeout}s — "
+            "the test suite took too long. Increase the sandbox timeout if needed."
         )
     except Exception as e:
         return f"ERROR: {type(e).__name__}: {e}"

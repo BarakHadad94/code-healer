@@ -98,13 +98,29 @@ async def run_healing_agent(
     for iteration in range(1, max_iterations + 1):
         await log_callback({"type": "log", "message": f"--- Iteration {iteration}/{max_iterations} ---"})
 
-        response = await client.messages.create(
-            model=model,
-            max_tokens=_MAX_TOKENS,
-            system=system,
-            tools=TOOL_DEFINITIONS,
-            messages=messages,
-        )
+        try:
+            response = await client.messages.create(
+                model=model,
+                max_tokens=_MAX_TOKENS,
+                system=system,
+                tools=TOOL_DEFINITIONS,
+                messages=messages,
+            )
+        except anthropic.AuthenticationError:
+            raise RuntimeError(
+                "Anthropic API key is invalid or missing. "
+                "Check ANTHROPIC_API_KEY in your .env file."
+            )
+        except anthropic.RateLimitError:
+            raise RuntimeError(
+                "Anthropic API rate limit reached. Wait a moment and try again."
+            )
+        except anthropic.APIConnectionError:
+            raise RuntimeError(
+                "Could not connect to Anthropic API. Check your internet connection."
+            )
+        except anthropic.APIStatusError as e:
+            raise RuntimeError(f"Anthropic API error {e.status_code}: {e.message}")
 
         total_input_tokens += response.usage.input_tokens
         total_output_tokens += response.usage.output_tokens

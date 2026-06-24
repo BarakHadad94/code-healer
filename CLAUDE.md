@@ -133,11 +133,11 @@ Demo script is a **browser walkthrough** — it comes **after** UI polish (Phase
 
 Code quality, security, and structure. No dashboard work, no servers.
 
-- [ ] **Unit tests** for `precheck.py`, `activation.py`, `config_loader.py`
-- [ ] **`tasks.py` refactor** — move orchestration out of `main.py` (matches target file structure)
-- [ ] **Trigger auth** — API key or secret on `/trigger` (required before public deploy)
-- [ ] **Error handling pass** — clear messages when pytest missing, Docker down, bad workspace path, API errors
-- [ ] **Config audit** — ensure sensitive paths and model settings all flow from `config.yaml` (no stray hardcoded values)
+- [x] **Unit tests** for `precheck.py`, `activation.py`, `config_loader.py`
+- [x] **`tasks.py` refactor** — move orchestration out of `main.py` (matches target file structure)
+- [x] **Trigger auth** — API key or secret on `/trigger` (required before public deploy)
+- [x] **Error handling pass** — clear messages when pytest missing, Docker down, bad workspace path, API errors
+- [x] **Config audit** — ensure sensitive paths and model settings all flow from `config.yaml` (no stray hardcoded values)
 
 ---
 
