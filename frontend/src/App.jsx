@@ -2,6 +2,17 @@ import { useState, useRef, useEffect } from 'react'
 import LogFeed from './LogFeed'
 import DiffView from './DiffView'
 
+function formatIsraelTime(isoStr) {
+  const s = String(isoStr)
+  // Backend naive UTC datetime lacks a Z suffix — add it so JS parses as UTC
+  const utc = /Z|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + 'Z'
+  return new Date(utc).toLocaleString('en-GB', {
+    timeZone: 'Asia/Jerusalem',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  })
+}
+
 const STATUS_BADGE = {
   idle:    { label: 'Idle',    bg: '#21262d', color: '#8b949e' },
   running: { label: 'Healing', bg: '#0c2340', color: '#58a6ff' },
@@ -44,6 +55,7 @@ export default function App() {
   const [runsLoading, setRunsLoading] = useState(true)
   const [runsError, setRunsError] = useState(false)
   const wsRef = useRef(null)
+  const reasoningRef = useRef(null)
 
   useEffect(() => {
     fetchHistory()
@@ -81,6 +93,10 @@ export default function App() {
     setDiff('')
     setStatus('running')
     setActivationReason(null)
+    setSelectedRun(null)
+    setHistoricalDiff('')
+    // Scroll to reasoning section once — internal box scrolls on its own after that
+    setTimeout(() => reasoningRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
 
     let runId
     try {
@@ -121,15 +137,12 @@ export default function App() {
       } else if (msg.type === 'done') {
         setStatus('success')
         setLogs(prev => [...prev, msg])
-        fetchHistory()
       } else if (msg.type === 'skipped') {
         setStatus('skipped')
         setLogs(prev => [...prev, msg])
-        fetchHistory()
       } else if (msg.type === 'error') {
         setStatus('failed')
         setLogs(prev => [...prev, msg])
-        fetchHistory()
       } else {
         setLogs(prev => [...prev, msg])
       }
@@ -141,49 +154,28 @@ export default function App() {
     }
 
     ws.onclose = (event) => {
-      // A clean close (1000) means the server already sent a terminal
-      // message (done/error/skipped) and the UI is already up to date.
+      // Always refresh history when the connection ends so the completed run appears.
+      fetchHistory()
       if (event.code === 1000) return
       setStatus(prev => (prev === 'running' ? 'failed' : prev))
       setLogs(prev => [
         ...prev,
         { type: 'error', message: 'Connection closed before the run finished streaming — refresh to see the final result in Run History.' },
       ])
-      fetchHistory()
     }
   }
-
-  const badge = STATUS_BADGE[status]
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 20px' }}>
 
       {/* Header */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 10,
         paddingBottom: 20, marginBottom: 24,
         borderBottom: '1px solid #21262d',
       }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.5px' }}>
           ⚕ code-healer
         </h1>
-        <span style={{
-          padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-          background: badge.bg, color: badge.color,
-        }}>
-          {badge.label}
-        </span>
-        {activationReason && (() => {
-          const ab = activationBadge(activationReason)
-          return (
-            <span style={{
-              padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-              background: ab.bg, color: ab.color,
-            }}>
-              {ab.label}
-            </span>
-          )
-        })()}
       </div>
 
       {/* Trigger form */}
@@ -280,25 +272,35 @@ export default function App() {
       </div>
 
       {/* Log feed + Diff view */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 32 }}>
+      <div ref={reasoningRef} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 32 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <SectionLabel style={{ marginBottom: 0 }}>Agent Reasoning</SectionLabel>
-            {status === 'running' && !activationReason && (
+            <SectionLabel style={{ marginBottom: 0 }}>
+              {selectedRun ? 'Run Detail' : 'Agent Reasoning'}
+            </SectionLabel>
+            {!selectedRun && status === 'running' && !activationReason && (
               <span style={{ fontSize: 11, color: '#d29922' }}>Pre-check running…</span>
             )}
-            {status === 'running' && activationReason && (
+            {!selectedRun && status === 'running' && activationReason && (
               <span style={{ fontSize: 11, color: '#58a6ff' }}>Agent running…</span>
             )}
+            {selectedRun && (
+              <button
+                onClick={() => { setSelectedRun(null); setHistoricalDiff('') }}
+                style={{ background: 'none', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: 11, padding: 0, fontWeight: 400 }}
+              >
+                ✕ back to live
+              </button>
+            )}
           </div>
-          <LogFeed logs={logs} />
+          {selectedRun ? <RunDetail run={selectedRun} /> : <LogFeed logs={logs} />}
         </div>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <SectionLabel style={{ marginBottom: 0 }}>Code Diff</SectionLabel>
             {selectedRun && (
               <span style={{ fontSize: 11, color: '#8b949e' }}>
-                — {selectedRun.file_path} · {new Date(selectedRun.created_at).toLocaleString()}
+                — {selectedRun.file_path} · {formatIsraelTime(selectedRun.created_at)}
                 <button
                   onClick={() => { setSelectedRun(null); setHistoricalDiff('') }}
                   style={{
@@ -322,7 +324,7 @@ export default function App() {
           background: '#161b22', border: '1px solid #30363d',
           borderRadius: 8, overflow: 'hidden',
         }}>
-          {runsLoading ? (
+          {runsLoading && runs.length === 0 ? (
             <p style={{ padding: '20px 16px', color: '#484f58' }}>Loading…</p>
           ) : runsError ? (
             <p style={{ padding: '20px 16px', color: '#f85149' }}>
@@ -374,7 +376,7 @@ export default function App() {
                     </td>
                     <td style={{ ...tdStyle, color: '#8b949e' }}>{run.iterations ?? '—'}</td>
                     <td style={{ ...tdStyle, color: '#8b949e', fontFamily: 'Cascadia Code, monospace', fontSize: 12 }}>
-                      {new Date(run.created_at).toLocaleString()}
+                      {formatIsraelTime(run.created_at)}
                     </td>
                   </tr>
                 ))}
@@ -384,6 +386,56 @@ export default function App() {
         </div>
       </div>
 
+    </div>
+  )
+}
+
+function RunDetail({ run }) {
+  const ab = activationBadge(run.activation_reason)
+  const sb = statusBadge(run.status)
+  return (
+    <div style={{
+      background: '#161b22', border: '1px solid #30363d', borderRadius: 8,
+      padding: '20px 24px', height: 400, overflowY: 'auto',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', fontSize: 13,
+    }}>
+      <p style={{ fontSize: 11, color: '#6e7681', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>Historical Run</p>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: sb.bg, color: sb.color }}>
+          {run.status}
+        </span>
+        <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: ab.bg, color: ab.color }}>
+          {ab.label}
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <DetailRow label="File" value={run.file_path} mono />
+        <DetailRow label="Repo" value={run.repo} />
+        {run.iterations != null && <DetailRow label="Iterations" value={run.iterations} />}
+        {run.fix_branch && <DetailRow label="Fix branch" value={run.fix_branch} mono />}
+        {run.input_tokens > 0 && (
+          <DetailRow
+            label="Token usage"
+            value={`in: ${run.input_tokens}  out: ${run.output_tokens}  ·  ~$${run.estimated_cost_usd?.toFixed(4)}`}
+          />
+        )}
+        <DetailRow label="Started" value={formatIsraelTime(run.created_at)} />
+      </div>
+    </div>
+  )
+}
+
+function DetailRow({ label, value, mono }) {
+  return (
+    <div>
+      <span style={{ color: '#6e7681', fontSize: 11, display: 'inline-block', width: 100 }}>{label}</span>
+      <span style={{
+        color: '#e6edf3',
+        fontFamily: mono ? 'Cascadia Code, Fira Code, Consolas, monospace' : 'inherit',
+        fontSize: mono ? 12 : 13,
+      }}>
+        {value}
+      </span>
     </div>
   )
 }

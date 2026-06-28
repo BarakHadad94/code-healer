@@ -91,12 +91,6 @@ async def run_healing_task(run_id: str, body) -> None:
     })
 
     if activation == ActivationReason.SKIPPED:
-        avg_cost = _average_agent_run_cost()
-        if avg_cost:
-            await log_callback({
-                "type": "log",
-                "message": f"Estimated savings: ~${avg_cost:.4f} (avg. cost of past agent runs, not spent)",
-            })
         await log_callback({
             "type": "skipped",
             "message": "Pre-check passed — no sensitive paths touched, agent not invoked",
@@ -251,17 +245,6 @@ def _db_complete_run(
             run.error_log = error_log
         db.commit()
 
-
-def _average_agent_run_cost() -> Optional[float]:
-    """Average estimated_cost_usd across past runs that actually invoked the agent."""
-    with SessionLocal() as db:
-        costs = [
-            c for (c,) in db.query(HealingRun.estimated_cost_usd)
-                .filter(HealingRun.estimated_cost_usd.isnot(None))
-                .filter(HealingRun.estimated_cost_usd > 0)
-                .all()
-        ]
-        return sum(costs) / len(costs) if costs else None
 
 
 # ── Utilities ────────────────────────────────────────────────────────────────

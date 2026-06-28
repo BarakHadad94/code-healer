@@ -13,24 +13,28 @@ function styleForMsg(msg) {
 }
 
 export default function LogFeed({ logs }) {
-  const bottomRef = useRef(null)
+  const containerRef = useRef(null)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const el = containerRef.current
+    if (el) el.scrollTop = el.scrollHeight
   }, [logs])
 
   return (
-    <div style={{
-      background: '#161b22',
-      border: '1px solid #30363d',
-      borderRadius: 8,
-      padding: '12px 16px',
-      height: 400,
-      overflowY: 'auto',
-      fontFamily: 'Cascadia Code, Fira Code, Consolas, monospace',
-      fontSize: 13,
-      lineHeight: 1.65,
-    }}>
+    <div
+      ref={containerRef}
+      style={{
+        background: '#161b22',
+        border: '1px solid #30363d',
+        borderRadius: 8,
+        padding: '12px 16px',
+        height: 400,
+        overflowY: 'auto',
+        fontFamily: 'Cascadia Code, Fira Code, Consolas, monospace',
+        fontSize: 13,
+        lineHeight: 1.65,
+      }}
+    >
       {logs.length === 0 ? (
         <span style={{ color: '#3d444d' }}>Waiting for healing run…</span>
       ) : (
@@ -41,7 +45,6 @@ export default function LogFeed({ logs }) {
           </div>
         ))
       )}
-      <div ref={bottomRef} />
     </div>
   )
 }
