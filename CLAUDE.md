@@ -157,9 +157,9 @@ Dashboard improvements only.
 
 Runs **after** Phase 5 so the dashboard is demo-ready.
 
-- [ ] **`demo/run_demo.ps1` and `demo/run_demo.sh`** — break sample code, open dashboard URL, guide user through form + **Start Healing**
+- [x] **`demo/run_demo.ps1` and `demo/run_demo.sh`** — break sample code, open dashboard URL, guide user through form + **Start Healing**
 - [ ] **Scenario B variant** — flag or second script for `auth/session.py` deep review
-- [ ] **Prereq checks** — Docker Desktop running, backend + frontend up, `.env` present, sandbox image built
+- [x] **Prereq checks** — Docker Desktop running, backend + frontend up, `.env` present, sandbox image built
 
 ---
 
