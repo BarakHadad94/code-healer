@@ -167,10 +167,10 @@ Runs **after** Phase 5 so the dashboard is demo-ready.
 
 Local production-like setup before writing deploy docs.
 
-- [ ] **Backend `Dockerfile`**
-- [ ] **`docker-compose.yml`** — backend, frontend, sandbox image build
-- [ ] **Volume mounts** — workspace, SQLite DB, Docker socket (for sandbox from inside backend container)
-- [ ] **`.env.example`** — document all env vars for compose
+- [x] **Backend `Dockerfile`**
+- [x] **`docker-compose.yml`** — backend, frontend, sandbox image build
+- [x] **Volume mounts** — workspace, SQLite DB, Docker socket (for sandbox from inside backend container)
+- [x] **`.env.example`** — document all env vars for compose
 
 ---
 

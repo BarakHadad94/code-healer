@@ -1,4 +1,5 @@
 import asyncio
+import os
 from pathlib import Path
 
 import docker
@@ -33,6 +34,13 @@ def _run_container_sync(command: list[str], workspace: str, timeout: int) -> str
 
     # Resolve to absolute path so Docker mount works on all platforms
     abs_workspace = str(Path(workspace).resolve())
+
+    # When running inside Docker, the backend sees container paths (/app/...)
+    # but the host Docker daemon needs the HOST path for volume mounts.
+    # HOST_PROJECT_ROOT maps /app → the repo root on the host machine.
+    host_root = os.environ.get("HOST_PROJECT_ROOT", "").rstrip("/")
+    if host_root and abs_workspace.startswith("/app"):
+        abs_workspace = host_root + abs_workspace[len("/app"):]
 
     try:
         container = client.containers.create(

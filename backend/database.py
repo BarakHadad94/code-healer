@@ -1,8 +1,14 @@
+import os
+from pathlib import Path
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-# DB file lands at the project root (code-healer/code_healer.db)
-DATABASE_URL = "sqlite:///./code_healer.db"
+# In local dev the DB sits at the project root.
+# In Docker (DATA_DIR=/app/data) it lands in the mounted volume so it persists.
+_default_dir = Path(__file__).resolve().parent.parent
+_db_path = Path(os.environ.get("DATA_DIR", str(_default_dir))) / "code_healer.db"
+DATABASE_URL = f"sqlite:///{_db_path}"
 
 engine = create_engine(
     DATABASE_URL,

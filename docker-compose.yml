@@ -1,0 +1,33 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # SQLite DB is stored in the mounted volume, not inside the image layer
+      DATA_DIR: /app/data
+      # Absolute path to this repo root on the HOST machine.
+      # Sandbox containers are spawned by the host Docker daemon via the socket,
+      # so workspace paths must be host-relative, not container-relative.
+      # Set this in .env: HOST_PROJECT_ROOT=/home/ubuntu/code-healer
+      HOST_PROJECT_ROOT: ${HOST_PROJECT_ROOT}
+    volumes:
+      - ./demo/broken_code:/app/demo/broken_code   # agent reads/writes here
+      - ./demo/clean_code:/app/demo/clean_code     # deep-review demo workspace
+      - db_data:/app/data                          # SQLite DB persistence
+      - /var/run/docker.sock:/var/run/docker.sock  # lets backend spawn sandbox containers
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
