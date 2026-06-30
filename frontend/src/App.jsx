@@ -223,46 +223,28 @@ export default function App() {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
           <label style={labelStyle}>
-            Repo
-            <input
-              value={form.repo}
-              onChange={e => setForm(f => ({ ...f, repo: e.target.value }))}
-              placeholder="org/repo"
-            />
-          </label>
-          <label style={labelStyle}>
             File path (workspace-relative)
             <input
               value={form.file_path}
               onChange={e => setForm(f => ({ ...f, file_path: e.target.value }))}
-              placeholder="src/calculator.py"
+              placeholder="calculator.py"
+            />
+          </label>
+          <label style={labelStyle}>
+            Changed files (for sensitive-path detection)
+            <input
+              value={form.changed_files}
+              onChange={e => setForm(f => ({ ...f, changed_files: e.target.value }))}
+              placeholder="auth/session.py"
             />
           </label>
         </div>
-        <label style={{ ...labelStyle, marginBottom: 12, display: 'block' }}>
+        <label style={{ ...labelStyle, marginBottom: 16, display: 'block' }}>
           Workspace (absolute path on server)
           <input
             value={form.workspace}
             onChange={e => setForm(f => ({ ...f, workspace: e.target.value }))}
             placeholder="/absolute/path/to/workspace"
-          />
-        </label>
-        <label style={{ ...labelStyle, marginBottom: 12, display: 'block' }}>
-          Changed files (optional — comma or newline separated, for sensitive-path detection)
-          <input
-            value={form.changed_files}
-            onChange={e => setForm(f => ({ ...f, changed_files: e.target.value }))}
-            placeholder="auth/session.py, payments/checkout.py"
-          />
-        </label>
-        <label style={{ ...labelStyle, marginBottom: 16, display: 'block' }}>
-          Error log (optional — pre-check captures pytest output automatically)
-          <textarea
-            rows={5}
-            value={form.error_log}
-            onChange={e => setForm(f => ({ ...f, error_log: e.target.value }))}
-            placeholder="Leave empty — pytest runs automatically before the agent"
-            style={{ resize: 'vertical' }}
           />
         </label>
         <button

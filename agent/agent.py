@@ -151,7 +151,7 @@ async def run_healing_agent(
 
             # For write_file, don't dump the full content into the log
             if block.name == "write_file":
-                display_args = {k: (v[:120] + "…" if k == "content" and len(str(v)) > 120 else v)
+                display_args = {k: (v[:120] + "..." if k == "content" and len(str(v)) > 120 else v)
                                 for k, v in block.input.items()}
             else:
                 display_args = block.input

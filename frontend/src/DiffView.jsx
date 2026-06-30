@@ -35,7 +35,10 @@ export default function DiffView({ diff }) {
     )
   }
 
-  const lines = diff.split('\n').filter(l => !l.startsWith('--- ') && !l.startsWith('+++ '))
+  const lines = diff.split('\n').filter(l =>
+    !l.startsWith('--- ') && !l.startsWith('+++ ') &&
+    !l.startsWith('diff --git') && !l.startsWith('index ')
+  )
 
   return (
     <div style={{
