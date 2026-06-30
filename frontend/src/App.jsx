@@ -137,12 +137,15 @@ export default function App() {
       } else if (msg.type === 'done') {
         setStatus('success')
         setLogs(prev => [...prev, msg])
+        fetchHistory()
       } else if (msg.type === 'skipped') {
         setStatus('skipped')
         setLogs(prev => [...prev, msg])
+        fetchHistory()
       } else if (msg.type === 'error') {
         setStatus('failed')
         setLogs(prev => [...prev, msg])
+        fetchHistory()
       } else {
         setLogs(prev => [...prev, msg])
       }

@@ -96,7 +96,7 @@ async def run_healing_agent(
     files_written: list[str] = []
 
     for iteration in range(1, max_iterations + 1):
-        await log_callback({"type": "log", "message": f"--- Iteration {iteration}/{max_iterations} ---"})
+        await log_callback({"type": "log", "message": f"--- Iteration {iteration} ---"})
 
         try:
             response = await client.messages.create(
@@ -149,9 +149,15 @@ async def run_healing_agent(
             if block.type != "tool_use":
                 continue
 
+            # For write_file, don't dump the full content into the log
+            if block.name == "write_file":
+                display_args = {k: (v[:120] + "…" if k == "content" and len(str(v)) > 120 else v)
+                                for k, v in block.input.items()}
+            else:
+                display_args = block.input
             await log_callback({
                 "type": "log",
-                "message": f"[Tool] {block.name}  args={block.input}",
+                "message": f"[Tool] {block.name}  {display_args}",
             })
 
             if block.name == "write_file" and isinstance(block.input.get("path"), str):

@@ -35,7 +35,7 @@ export default function DiffView({ diff }) {
     )
   }
 
-  const lines = diff.split('\n')
+  const lines = diff.split('\n').filter(l => !l.startsWith('--- ') && !l.startsWith('+++ '))
 
   return (
     <div style={{

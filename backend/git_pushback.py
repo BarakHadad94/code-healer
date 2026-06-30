@@ -77,7 +77,7 @@ def create_fix_branch(
                     "— workspace left on the fix branch",
         )
 
-    return PushbackResult(branch=branch, message=f"Committed fix to local branch {branch} (not pushed)")
+    return PushbackResult(branch=branch, message=f"Fix committed to branch {branch} — ready for review & push")
 
 
 def git_diff(workspace: str, file_paths: list[str]) -> Optional[str]:
