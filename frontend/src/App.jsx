@@ -146,6 +146,8 @@ export default function App() {
         setStatus('failed')
         setLogs(prev => [...prev, msg])
         fetchHistory()
+      } else if (msg.type === 'keepalive') {
+        // server heartbeat — ignore
       } else {
         setLogs(prev => [...prev, msg])
       }
@@ -157,9 +159,9 @@ export default function App() {
     }
 
     ws.onclose = (event) => {
-      // Always refresh history when the connection ends so the completed run appears.
+      if (event.code === 1000) return  // normal close — history already fetched in onmessage
+      // Abnormal close — fetch as fallback since onmessage may not have fired for the terminal message
       fetchHistory()
-      if (event.code === 1000) return
       setStatus(prev => (prev === 'running' ? 'failed' : prev))
       setLogs(prev => [
         ...prev,

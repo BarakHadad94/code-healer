@@ -1,17 +1,42 @@
 const LINE_STYLES = {
-  added:   { background: '#0d4429', color: '#3fb950', borderLeft: '3px solid #3fb950' },
-  removed: { background: '#3d1212', color: '#f85149', borderLeft: '3px solid #f85149' },
-  hunk:    { background: '#0c2340', color: '#79c0ff', borderLeft: '3px solid #1f6feb' },
-  file:    { background: '#21262d', color: '#8b949e', borderLeft: '3px solid #30363d' },
-  context: { background: 'transparent', color: '#8b949e', borderLeft: '3px solid transparent' },
+  added:    { background: '#0d4429', color: '#3fb950', borderLeft: '3px solid #3fb950' },
+  removed:  { background: '#3d1212', color: '#f85149', borderLeft: '3px solid #f85149' },
+  hunk:     { background: '#0c2340', color: '#79c0ff', borderLeft: '3px solid #1f6feb' },
+  filename: { background: '#1c2128', color: '#8b949e', borderLeft: '3px solid #30363d', fontStyle: 'italic' },
+  context:  { background: 'transparent', color: '#8b949e', borderLeft: '3px solid transparent' },
 }
 
 function classifyLine(line) {
-  if (line.startsWith('+++') || line.startsWith('---')) return 'file'
   if (line.startsWith('+')) return 'added'
   if (line.startsWith('-')) return 'removed'
   if (line.startsWith('@@')) return 'hunk'
   return 'context'
+}
+
+function parseDiff(raw) {
+  const lines = raw.split('\n')
+  const fileCount = lines.filter(l => l.startsWith('diff --git ')).length
+  const multiFile = fileCount > 1
+
+  const out = []
+  for (const line of lines) {
+    if (line.startsWith('diff --git ')) {
+      if (multiFile) {
+        // "diff --git a/foo/bar.py b/foo/bar.py" → "foo/bar.py"
+        const m = line.match(/^diff --git a\/.+ b\/(.+)$/)
+        out.push({ type: 'filename', content: m ? m[1] : line })
+      }
+    } else if (
+      line.startsWith('--- ') ||
+      line.startsWith('+++ ') ||
+      line.startsWith('index ')
+    ) {
+      // always strip these — redundant with the filename header above
+    } else {
+      out.push({ type: classifyLine(line), content: line })
+    }
+  }
+  return out
 }
 
 export default function DiffView({ diff }) {
@@ -35,10 +60,7 @@ export default function DiffView({ diff }) {
     )
   }
 
-  const lines = diff.split('\n').filter(l =>
-    !l.startsWith('--- ') && !l.startsWith('+++ ') &&
-    !l.startsWith('diff --git') && !l.startsWith('index ')
-  )
+  const rows = parseDiff(diff)
 
   return (
     <div style={{
@@ -51,14 +73,19 @@ export default function DiffView({ diff }) {
       fontSize: 13,
       lineHeight: 1.6,
     }}>
-      {lines.map((line, i) => {
-        const type = classifyLine(line)
-        return (
-          <div key={i} style={{ padding: '0 16px', whiteSpace: 'pre', ...LINE_STYLES[type] }}>
-            {line || ' '}
-          </div>
-        )
-      })}
+      {rows.map((row, i) => (
+        <div
+          key={i}
+          style={{
+            padding: row.type === 'filename' ? '4px 16px' : '0 16px',
+            whiteSpace: 'pre',
+            fontSize: row.type === 'filename' ? 11 : 13,
+            ...LINE_STYLES[row.type],
+          }}
+        >
+          {row.content || ' '}
+        </div>
+      ))}
     </div>
   )
 }

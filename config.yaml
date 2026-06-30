@@ -2,6 +2,10 @@
 
 model: claude-sonnet-4-6
 
+# Maximum Anthropic API round-trips per healing run.
+# Each iteration = one API call. Simple self-heals need ~4-6; deep reviews need 8-12.
+max_iterations: 20
+
 # Scenario B: agent runs a deep review when tests pass but changes touch these paths.
 sensitive_paths:
   - auth/

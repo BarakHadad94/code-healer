@@ -196,7 +196,7 @@ async def websocket_logs(websocket: WebSocket, run_id: str):
             if msg.get("type") in ("done", "error", "skipped"):
                 await websocket.close(code=1000)
                 break
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, Exception):
         pass
     finally:
         _log_queues.pop(run_id, None)

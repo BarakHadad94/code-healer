@@ -1,12 +1,13 @@
 import asyncio
 import difflib
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 
 from agent.agent import run_healing_agent
 from backend.activation import ActivationReason, activation_label, decide_activation
-from backend.config_loader import get_model
+from backend.config_loader import get_max_iterations, get_model
 from backend.database import SessionLocal
 from backend.git_pushback import create_fix_branch, git_diff
 from backend.models import HealingRun
@@ -24,6 +25,16 @@ async def _cleanup_stale_queue(run_id: str, delay: int = _STALE_QUEUE_TTL) -> No
     """Drop orphaned queues when the client never opens a WebSocket."""
     await asyncio.sleep(delay)
     _log_queues.pop(run_id, None)
+
+
+async def _keepalive_loop(log_callback, interval: int = 25) -> None:
+    """Send a no-op heartbeat so the WebSocket doesn't drop during long Anthropic API calls."""
+    try:
+        while True:
+            await asyncio.sleep(interval)
+            await log_callback({"type": "keepalive"})
+    except asyncio.CancelledError:
+        pass
 
 
 async def run_healing_task(run_id: str, body) -> None:
@@ -120,6 +131,9 @@ async def run_healing_task(run_id: str, body) -> None:
     target_path = Path(body.workspace) / body.file_path
     original_content = _read_file_safe(target_path)
 
+    # Keepalive: send a heartbeat every 25 s so the WebSocket doesn't drop
+    # during the long pauses while the agent waits for Anthropic API responses.
+    keepalive = asyncio.create_task(_keepalive_loop(log_callback))
     result = {"status": "failed", "iterations": None}
     try:
         result = await run_healing_agent(
@@ -129,13 +143,16 @@ async def run_healing_task(run_id: str, body) -> None:
             log_callback=log_callback,
             mode=agent_mode,
             sensitive_files=sensitive_hits if agent_mode == "deep_review" else None,
+            max_iterations=get_max_iterations(),
         )
     except Exception as e:
+        keepalive.cancel()
         result = {"status": "failed", "iterations": None}
         await log_callback({"type": "error", "message": f"Agent error: {e}"})
         _db_complete_run(run_id, result, None)
         asyncio.create_task(_cleanup_stale_queue(run_id))
         return
+    keepalive.cancel()
 
     # Compute diff BEFORE emitting the terminal message so the WebSocket is still open.
     # git diff covers multiple changed files natively; fall back to a single-file
@@ -180,14 +197,18 @@ async def run_healing_task(run_id: str, body) -> None:
             "message": f"Could not fix automatically after {result.get('iterations', '?')} iterations",
         })
 
-    _db_complete_run(
-        run_id, result, diff,
-        error_log=body.error_log,
-        fix_branch=fix_branch,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        estimated_cost_usd=cost,
-    )
+    try:
+        _db_complete_run(
+            run_id, result, diff,
+            error_log=body.error_log,
+            fix_branch=fix_branch,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            estimated_cost_usd=cost,
+        )
+    except Exception as db_err:
+        logging.getLogger(__name__).error("_db_complete_run failed for %s: %s", run_id, db_err)
+
     # Keep the queue alive until the WebSocket drains it (avoids a race where
     # the background task finishes before the browser connects).
     asyncio.create_task(_cleanup_stale_queue(run_id))

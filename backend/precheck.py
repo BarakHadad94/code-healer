@@ -66,10 +66,9 @@ def _run_pytest_sync(workspace: str, timeout: int) -> PrecheckResult:
     if result.returncode == 0:
         return PrecheckResult(passed=True, output=output, exit_code=0)
 
-    prefix = f"[exit {result.returncode}]\n" if result.returncode != 0 else ""
     return PrecheckResult(
         passed=False,
-        output=prefix + output,
+        output=output,
         exit_code=result.returncode,
     )
 
@@ -122,9 +121,8 @@ def _run_ruff_sync(workspace: str, timeout: int) -> PrecheckResult:
     if result.returncode == 0:
         return PrecheckResult(passed=True, output=output, exit_code=0)
 
-    prefix = f"[exit {result.returncode}]\n" if result.returncode != 0 else ""
     return PrecheckResult(
         passed=False,
-        output=prefix + output,
+        output=output,
         exit_code=result.returncode,
     )

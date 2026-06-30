@@ -9,6 +9,7 @@ _CONFIG_PATH = _PROJECT_ROOT / "config.yaml"
 _DEFAULTS: dict[str, Any] = {
     "model": "claude-sonnet-4-6",
     "sensitive_paths": ["auth/", "payments/", "db/queries/"],
+    "max_iterations": 20,
 }
 
 
@@ -29,3 +30,11 @@ def get_sensitive_paths() -> list[str]:
 
 def get_model() -> str:
     return str(load_config().get("model") or _DEFAULTS["model"])
+
+
+def get_max_iterations() -> int:
+    val = load_config().get("max_iterations")
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return int(_DEFAULTS["max_iterations"])
