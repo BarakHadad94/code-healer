@@ -97,10 +97,21 @@ export default function App() {
           setRunsLoading(false)
           setRunsError(false)
           const run = data.find(r => r.id === runId)
-          // Stop once the run is done, or after a 3-minute safety timeout
-          if ((run && run.status !== 'running') || ticks > 90) {
+          const done = run && run.status !== 'running'
+          const timedOut = ticks > 90  // 3-minute safety net
+          if (done || timedOut) {
             clearInterval(historyPollRef.current)
             historyPollRef.current = null
+            // If the WS dropped mid-run, update the live-view status from DB truth
+            if (done) {
+              setStatus(prev => {
+                if (prev !== 'running') return prev  // WS already delivered the final status
+                return run.status === 'success' ? 'success' : run.status === 'skipped' ? 'skipped' : 'failed'
+              })
+            } else {
+              // Timed out without a DB update — mark failed so the button re-enables
+              setStatus(prev => prev === 'running' ? 'failed' : prev)
+            }
           }
         })
         .catch(() => {})
@@ -190,19 +201,19 @@ export default function App() {
     }
 
     ws.onerror = () => {
-      setStatus('failed')
-      setLogs(prev => [...prev, { type: 'error', message: 'WebSocket connection lost' }])
+      // Don't set 'failed' yet — the run may still complete in the background.
+      // startHistoryPoll will update status when the DB has the final result.
+      setLogs(prev => [...prev, { type: 'log', message: '[Live stream lost — tracking completion in background…]' }])
     }
 
     ws.onclose = (event) => {
-      if (event.code === 1000) return  // normal close — poll or history-ready already handles this
-      // Abnormal close: WS died before the run finished. The poll will keep trying.
-      // Also do an immediate fetch in case the DB was already updated before the drop.
+      if (event.code === 1000) return  // normal close — history-ready already refreshed history
+      // Abnormal close: stream dropped (proxy timeout, network blip, etc.)
+      // The background task continues running; the poll will deliver the final status.
       fetchHistory()
-      setStatus(prev => (prev === 'running' ? 'failed' : prev))
       setLogs(prev => [
         ...prev,
-        { type: 'error', message: 'Connection closed before the run finished streaming — refresh to see the final result in Run History.' },
+        { type: 'log', message: '[Live stream dropped — result will appear in Run History when complete]' },
       ])
     }
   }

@@ -161,7 +161,7 @@ async def run_healing_task(run_id: str, body) -> None:
     # git diff covers multiple changed files natively; fall back to a single-file
     # difflib comparison for non-git workspaces or if the agent reported no files.
     files_changed: list[str] = result.get("files_changed") or []
-    diff = git_diff(body.workspace, files_changed) if files_changed else None
+    diff = await asyncio.to_thread(git_diff, body.workspace, files_changed) if files_changed else None
     if diff is None:
         modified_content = _read_file_safe(target_path)
         diff = _compute_diff(original_content, modified_content, body.file_path)
@@ -183,7 +183,8 @@ async def run_healing_task(run_id: str, body) -> None:
 
     fix_branch = None
     if result.get("status") == "success" and diff and files_changed:
-        pushback = create_fix_branch(
+        pushback = await asyncio.to_thread(
+            create_fix_branch,
             workspace=body.workspace,
             file_paths=files_changed,
             run_id=run_id,
