@@ -36,6 +36,18 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     create_tables()
+    _mark_stale_runs_failed()
+
+
+def _mark_stale_runs_failed() -> None:
+    """Any run still 'running' when the server starts was interrupted by a restart."""
+    with SessionLocal() as db:
+        stale = db.query(HealingRun).filter(HealingRun.status == "running").all()
+        for run in stale:
+            run.status = "failed"
+            run.completed_at = datetime.utcnow()
+        if stale:
+            db.commit()
 
 
 # ── Request / Response models ────────────────────────────────────────────────

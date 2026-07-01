@@ -56,13 +56,20 @@ export default function App() {
   const [runsError, setRunsError] = useState(false)
   const wsRef = useRef(null)
   const reasoningRef = useRef(null)
+  const historyPollRef = useRef(null)
+  const runStatusRef = useRef('idle')
+
+  // Keep runStatusRef in sync so interval callbacks don't see stale status
+  useEffect(() => { runStatusRef.current = status }, [status])
 
   useEffect(() => {
+    setRunsLoading(true)
     fetchHistory()
     fetchDemoWorkspaces()
+    return () => { if (historyPollRef.current) clearInterval(historyPollRef.current) }
   }, [])
 
-  function fetchDemoWorkspaces(retries = 6, delay = 800) {
+  function fetchDemoWorkspaces(retries = 25, delay = 1000) {
     fetch('/demo/workspaces')
       .then(r => r.json())
       .then(setDemoWorkspaces)
@@ -71,20 +78,33 @@ export default function App() {
       })
   }
 
-  function fetchHistory(retries = 4, delay = 1000) {
-    setRunsLoading(true)
-    setRunsError(false)
+  function fetchHistory() {
     fetch('/runs')
       .then(r => { if (!r.ok) throw new Error(); return r.json() })
-      .then(data => { setRuns(data); setRunsLoading(false) })
-      .catch(() => {
-        if (retries > 0) {
-          setTimeout(() => fetchHistory(retries - 1, delay), delay)
-        } else {
-          setRunsError(true)
+      .then(data => { setRuns(data); setRunsLoading(false); setRunsError(false) })
+      .catch(() => { setRunsError(true); setRunsLoading(false) })
+  }
+
+  function startHistoryPoll(runId) {
+    if (historyPollRef.current) clearInterval(historyPollRef.current)
+    let ticks = 0
+    historyPollRef.current = setInterval(() => {
+      ticks++
+      fetch('/runs')
+        .then(r => r.json())
+        .then(data => {
+          setRuns(data)
           setRunsLoading(false)
-        }
-      })
+          setRunsError(false)
+          const run = data.find(r => r.id === runId)
+          // Stop once the run is done, or after a 3-minute safety timeout
+          if ((run && run.status !== 'running') || ticks > 90) {
+            clearInterval(historyPollRef.current)
+            historyPollRef.current = null
+          }
+        })
+        .catch(() => {})
+    }, 2000)
   }
 
   async function handleRunClick(run) {
@@ -134,6 +154,7 @@ export default function App() {
       }
       const data = await res.json()
       runId = data.run_id
+      startHistoryPoll(runId)
     } catch (e) {
       setStatus('failed')
       setLogs([{ type: 'error', message: `Could not start run: ${e.message}` }])
@@ -174,8 +195,9 @@ export default function App() {
     }
 
     ws.onclose = (event) => {
-      if (event.code === 1000) return  // normal close — history already fetched via history-ready
-      // Abnormal close — fetch as fallback in case history-ready was never received
+      if (event.code === 1000) return  // normal close — poll or history-ready already handles this
+      // Abnormal close: WS died before the run finished. The poll will keep trying.
+      // Also do an immediate fetch in case the DB was already updated before the drop.
       fetchHistory()
       setStatus(prev => (prev === 'running' ? 'failed' : prev))
       setLogs(prev => [
