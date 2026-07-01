@@ -54,14 +54,16 @@ def _warn_if_bad_reload_config() -> None:
     logging.getLogger(__name__).critical(
         "\n"
         "╔══════════════════════════════════════════════════════════════════╗\n"
-        "║  FATAL: uvicorn will reload when the agent writes calculator.py  ║\n"
-        "║  Self-heal runs will be killed at the write_file step (iter 3).  ║\n"
+        "║  WARNING: --reload is active without --reload-dir restrictions.  ║\n"
+        "║  uvicorn may reload mid-run and kill the healing task.           ║\n"
         "║                                                                  ║\n"
-        "║  Stop this server and restart with:                              ║\n"
+        "║  For demos / testing — run WITHOUT --reload (recommended):       ║\n"
+        "║    uvicorn backend.main:app --port 8000                          ║\n"
+        "║    .\\start.ps1  (Windows)  /  ./start.sh  (Linux)               ║\n"
+        "║                                                                  ║\n"
+        "║  For active development — restrict the watcher:                  ║\n"
         "║    uvicorn backend.main:app --reload \\                           ║\n"
         "║      --reload-dir backend --reload-dir agent --port 8000         ║\n"
-        "║                                                                  ║\n"
-        "║  Or simply run:  .\\start.ps1  (Windows)  /  ./start.sh  (Linux) ║\n"
         "╚══════════════════════════════════════════════════════════════════╝"
     )
 
@@ -220,6 +222,7 @@ async def websocket_logs(websocket: WebSocket, run_id: str):
     Streams structured log messages for a healing run.
     Closes automatically when the agent emits a "done" or "error" message.
     """
+    _ws_log = logging.getLogger(__name__)
     await websocket.accept()
 
     if run_id not in _log_queues:
@@ -235,7 +238,13 @@ async def websocket_logs(websocket: WebSocket, run_id: str):
             if msg.get("type") == "history-ready":
                 await websocket.close(code=1000)
                 break
-    except (WebSocketDisconnect, Exception):
+    except WebSocketDisconnect:
         pass
+    except asyncio.CancelledError:
+        # Task was cancelled — almost always means uvicorn is reloading or
+        # shutting down.  Run without --reload to prevent this during demos.
+        _ws_log.warning("WS %s cancelled — uvicorn reload/shutdown while run was active", run_id[:8])
+    except Exception as e:
+        _ws_log.warning("WS %s closed unexpectedly: %s: %s", run_id[:8], type(e).__name__, e)
     finally:
         _log_queues.pop(run_id, None)
