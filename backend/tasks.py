@@ -27,7 +27,7 @@ async def _cleanup_stale_queue(run_id: str, delay: int = _STALE_QUEUE_TTL) -> No
     _log_queues.pop(run_id, None)
 
 
-async def _keepalive_loop(log_callback, interval: int = 25) -> None:
+async def _keepalive_loop(log_callback, interval: int = 10) -> None:
     """Send a no-op heartbeat so the WebSocket doesn't drop during long Anthropic API calls."""
     try:
         while True:

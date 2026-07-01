@@ -172,8 +172,13 @@ export default function App() {
       return
     }
 
-    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${wsProto}//${window.location.host}/ws/logs/${runId}`)
+    // In dev mode, connect directly to the backend to avoid the Vite proxy.
+    // Proxied WebSocket connections can drop mid-run when the proxy times out
+    // during long Anthropic API calls. In production the same-host path is used.
+    const wsBase = import.meta.env.DEV
+      ? 'ws://localhost:8000'
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
+    const ws = new WebSocket(`${wsBase}/ws/logs/${runId}`)
     wsRef.current = ws
 
     ws.onmessage = (event) => {
