@@ -62,6 +62,7 @@ async def run_healing_task(run_id: str, body) -> None:
         })
         _db_set_activation(run_id, None)
         _db_complete_run(run_id, {"status": "failed", "iterations": None}, None)
+        await log_callback({"type": "history-ready"})
         asyncio.create_task(_cleanup_stale_queue(run_id))
         return
 
@@ -107,6 +108,7 @@ async def run_healing_task(run_id: str, body) -> None:
             "message": "Pre-check passed — no sensitive paths touched, agent not invoked",
         })
         _db_complete_run(run_id, {"status": "skipped", "iterations": None}, None)
+        await log_callback({"type": "history-ready"})
         asyncio.create_task(_cleanup_stale_queue(run_id))
         return
 
@@ -150,6 +152,7 @@ async def run_healing_task(run_id: str, body) -> None:
         result = {"status": "failed", "iterations": None}
         await log_callback({"type": "error", "message": f"Agent error: {e}"})
         _db_complete_run(run_id, result, None)
+        await log_callback({"type": "history-ready"})
         asyncio.create_task(_cleanup_stale_queue(run_id))
         return
     keepalive.cancel()
@@ -208,6 +211,9 @@ async def run_healing_task(run_id: str, body) -> None:
         )
     except Exception as db_err:
         logging.getLogger(__name__).error("_db_complete_run failed for %s: %s", run_id, db_err)
+
+    # Signal the browser to refresh history — DB is committed at this point.
+    await log_callback({"type": "history-ready"})
 
     # Keep the queue alive until the WebSocket drains it (avoids a race where
     # the background task finishes before the browser connects).

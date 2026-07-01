@@ -193,7 +193,7 @@ async def websocket_logs(websocket: WebSocket, run_id: str):
         while True:
             msg = await queue.get()
             await websocket.send_json(msg)
-            if msg.get("type") in ("done", "error", "skipped"):
+            if msg.get("type") == "history-ready":
                 await websocket.close(code=1000)
                 break
     except (WebSocketDisconnect, Exception):

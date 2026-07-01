@@ -59,16 +59,32 @@ export default function App() {
 
   useEffect(() => {
     fetchHistory()
-    fetch('/demo/workspaces').then(r => r.json()).then(setDemoWorkspaces).catch(() => {})
+    fetchDemoWorkspaces()
   }, [])
 
-  function fetchHistory() {
+  function fetchDemoWorkspaces(retries = 6, delay = 800) {
+    fetch('/demo/workspaces')
+      .then(r => r.json())
+      .then(setDemoWorkspaces)
+      .catch(() => {
+        if (retries > 0) setTimeout(() => fetchDemoWorkspaces(retries - 1, delay), delay)
+      })
+  }
+
+  function fetchHistory(retries = 4, delay = 1000) {
     setRunsLoading(true)
     setRunsError(false)
     fetch('/runs')
       .then(r => { if (!r.ok) throw new Error(); return r.json() })
       .then(data => { setRuns(data); setRunsLoading(false) })
-      .catch(() => { setRunsError(true); setRunsLoading(false) })
+      .catch(() => {
+        if (retries > 0) {
+          setTimeout(() => fetchHistory(retries - 1, delay), delay)
+        } else {
+          setRunsError(true)
+          setRunsLoading(false)
+        }
+      })
   }
 
   async function handleRunClick(run) {
@@ -137,14 +153,13 @@ export default function App() {
       } else if (msg.type === 'done') {
         setStatus('success')
         setLogs(prev => [...prev, msg])
-        fetchHistory()
       } else if (msg.type === 'skipped') {
         setStatus('skipped')
         setLogs(prev => [...prev, msg])
-        fetchHistory()
       } else if (msg.type === 'error') {
         setStatus('failed')
         setLogs(prev => [...prev, msg])
+      } else if (msg.type === 'history-ready') {
         fetchHistory()
       } else if (msg.type === 'keepalive') {
         // server heartbeat — ignore
@@ -159,8 +174,8 @@ export default function App() {
     }
 
     ws.onclose = (event) => {
-      if (event.code === 1000) return  // normal close — history already fetched in onmessage
-      // Abnormal close — fetch as fallback since onmessage may not have fired for the terminal message
+      if (event.code === 1000) return  // normal close — history already fetched via history-ready
+      // Abnormal close — fetch as fallback in case history-ready was never received
       fetchHistory()
       setStatus(prev => (prev === 'running' ? 'failed' : prev))
       setLogs(prev => [

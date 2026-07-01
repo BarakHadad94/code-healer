@@ -3,6 +3,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.pool import NullPool
 
 # In local dev the DB sits at the project root.
 # In Docker (DATA_DIR=/app/data) it lands in the mounted volume so it persists.
@@ -13,6 +14,7 @@ DATABASE_URL = f"sqlite:///{_db_path}"
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False},
+    poolclass=NullPool,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
