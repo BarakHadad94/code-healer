@@ -1,7 +1,9 @@
 import asyncio
 import hashlib
 import hmac
+import logging
 import os
+import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -35,8 +37,33 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup() -> None:
+    _warn_if_bad_reload_config()
     create_tables()
     _mark_stale_runs_failed()
+
+
+def _warn_if_bad_reload_config() -> None:
+    """Detect if uvicorn will reload when the agent writes to demo/ and print a fatal warning."""
+    args = sys.argv
+    if "--reload" not in args:
+        return
+    has_reload_dir = any(a == "--reload-dir" or a.startswith("--reload-dir=") for a in args)
+    has_reload_exclude = any(a == "--reload-exclude" or a.startswith("--reload-exclude=") for a in args)
+    if has_reload_dir or has_reload_exclude:
+        return
+    logging.getLogger(__name__).critical(
+        "\n"
+        "╔══════════════════════════════════════════════════════════════════╗\n"
+        "║  FATAL: uvicorn will reload when the agent writes calculator.py  ║\n"
+        "║  Self-heal runs will be killed at the write_file step (iter 3).  ║\n"
+        "║                                                                  ║\n"
+        "║  Stop this server and restart with:                              ║\n"
+        "║    uvicorn backend.main:app --reload \\                           ║\n"
+        "║      --reload-dir backend --reload-dir agent --port 8000         ║\n"
+        "║                                                                  ║\n"
+        "║  Or simply run:  .\\start.ps1  (Windows)  /  ./start.sh  (Linux) ║\n"
+        "╚══════════════════════════════════════════════════════════════════╝"
+    )
 
 
 def _mark_stale_runs_failed() -> None:
