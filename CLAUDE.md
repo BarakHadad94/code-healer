@@ -91,12 +91,9 @@ Sensitive paths are configurable via `config.yaml` at the repo root.
 
 ```
 Phase 1–2 (done) → 3 Features → 4 Engineering → 5 UI Polish → 6 Demo Script
-  → 7 Dockerize → 8 README → 9 Deploy → 10 Demo Video
+  → 7 Dockerize → 8 README → 9 Deploy
 ```
 
-Demo script is a **browser walkthrough** — it comes **after** UI polish (Phase 5), not before.
-
----
 
 ### Phase 1 — Core Loop (MVP) ✅
 - [x] Scaffold FastAPI backend with `/trigger` endpoint and WebSocket `/ws/logs`
@@ -178,10 +175,8 @@ Local production-like setup before writing deploy docs.
 
 Written after Docker so instructions match the final run path.
 
-- [ ] **`README.md`** — project overview, local setup, docker-compose usage, demo instructions
-- [ ] **Architecture diagram** (mermaid or image) — Watcher / Brain / Dashboard + activation flow
-- [ ] **Keep `CLAUDE.md` in sync** with implementation as phases complete
-- [ ] **LICENSE** (optional, for GitHub portfolio)
+- [x] **`README.md`** — project overview, local setup, docker-compose usage, demo instructions
+- [x] **Keep `CLAUDE.md` in sync** with implementation as phases complete
 
 ---
 
@@ -197,14 +192,6 @@ Final technical step. **Same VPS as the apartment rental site** — new Nginx vh
 
 ---
 
-### Phase 10 — Demo Video
-
-Record last, when the app is stable on the server (or docker-compose locally if deploy is delayed).
-
-- [ ] **30–60s screen recording** — self-heal flow (optionally skip + deep review clips)
-- [ ] **Embed or link in README** — GitHub-hosted GIF, YouTube, or Loom
-
----
 
 ## Key Design Decisions & Rationale
 

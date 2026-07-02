@@ -52,7 +52,15 @@
       "Bash(curl *)",
       "Bash(taskkill //F //PID 22240)",
       "Bash(rm -f webhook_payload.json webhook_sig.txt)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(python -c \"import yaml; yaml.safe_load\\(open\\('.github/workflows/notify-code-healer.yml'\\)\\); print\\('valid YAML'\\)\")",
+      "Skill(run)",
+      "PowerShell(cd C:\\\\Users\\\\Barak\\\\Projects\\\\code-healer; Start-Process powershell -ArgumentList '-NoExit', '-Command', 'uvicorn backend.main:app --reload --reload-dir backend --reload-dir agent --port 8000')",
+      "PowerShell(cd C:\\\\Users\\\\Barak\\\\Projects\\\\code-healer\\\\frontend; Start-Process powershell -ArgumentList '-NoExit', '-Command', 'npm run dev')",
+      "PowerShell(Start-Sleep -Seconds 4; try { $r = Invoke-WebRequest -Uri http://localhost:8000/runs -UseBasicParsing; \"backend OK: $\\($r.StatusCode\\)\" } catch { \"backend not ready: $_\" })",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri http://localhost:5173 -UseBasicParsing; \"frontend OK: $\\($r.StatusCode\\)\" } catch { \"frontend not ready: $_\" })",
+      "PowerShell($r = Invoke-WebRequest -Uri http://localhost:8000/runs -UseBasicParsing | ConvertFrom-Json; $r | Select-Object -First 3 | ForEach-Object { \"id=$\\($_.id.Substring\\(0,8\\)\\) status=$\\($_.status\\) file=$\\($_.file_path\\)\" })",
+      "PowerShell($runs = Invoke-WebRequest -Uri http://localhost:8000/runs -UseBasicParsing | ConvertFrom-Json; $id = $runs[0].id; $d = Invoke-WebRequest -Uri \"http://localhost:8000/runs/$id/diff\" -UseBasicParsing | ConvertFrom-Json; if \\($d.diff\\) { \"diff endpoint OK, diff length=$\\($d.diff.Length\\) chars\" } else { \"diff is empty/null\" })"
     ]
   }
 }
