@@ -59,8 +59,8 @@ Sensitive paths are configurable via `config.yaml` at the repo root.
 
 ## Infrastructure
 
-- **Server:** Same Linux VPS as the apartment rental site (shared host, separate Nginx vhost)
-- **Subdomain:** `healer.<existing-domain>` via Nginx reverse proxy
+- **Server:** Same Linux VPS as the apartment rental site (shared host, separate Caddy site block)
+- **Subdomain:** `healer.<existing-domain>` via Caddy reverse proxy (Caddy already runs on this VPS for the rental site and handles Let's Encrypt automatically)
 - **Sandbox:** Agent tools execute inside ephemeral **Docker containers** — never touching host filesystem for test/lint execution
   - Containers are spun up per-run, destroyed after
   - Prevents any destructive/malicious code execution
@@ -80,7 +80,7 @@ Sensitive paths are configurable via `config.yaml` at the repo root.
 | DB | SQLite + SQLAlchemy | Persist run history; swap to Postgres later |
 | Frontend | React + Vite | Minimal — focus is backend/agent |
 | Config | `config.yaml` + `.env` | Sensitive paths, model; API key in `.env` only |
-| Infra | Nginx, shared VPS | Subdomain proxy alongside apartment site |
+| Infra | Caddy, shared VPS | Subdomain proxy alongside apartment site |
 | CI sim | Demo script (browser) | Phase 6; later GitHub webhook |
 
 ---
@@ -182,10 +182,10 @@ Written after Docker so instructions match the final run path.
 
 ### Phase 9 — Deploy
 
-Final technical step. **Same VPS as the apartment rental site** — new Nginx vhost, no shared app process.
+Final technical step. **Same VPS as the apartment rental site** — new Caddy site block, no shared app process.
 
-- [ ] **Deploy containers to VPS** (or backend + static frontend build)
-- [ ] **Nginx** reverse proxy for `healer.<domain>`
+- [x] **Deploy containers to VPS** (or backend + static frontend build) — backend + frontend running via `docker compose` on the VPS; verified with a real end-to-end healing run. Not yet reachable via a domain (still on a raw `IP:port`) — that's the next two bullets.
+- [ ] **Caddy** reverse proxy for `healer.<domain>`
 - [ ] **HTTPS** via Let's Encrypt
 - [ ] **Production secrets** — API keys, trigger auth; never committed to git
 - [ ] **GitHub webhook** (if not done in Phase 3) — point CI failures at production `/trigger`
