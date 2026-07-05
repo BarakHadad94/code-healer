@@ -1,30 +1,33 @@
 # Sample CI integration for code-healer's real (non-dashboard) trigger path.
 #
-# This is a template, not wired to a live deployment yet — code-healer isn't
-# publicly deployed (see CLAUDE.md Phase 9). It shows the intended production
-# flow: when this workflow's tests fail, it POSTs a signed payload to
-# code-healer's /webhook/github endpoint, which verifies an HMAC-SHA256
-# signature (same convention GitHub itself uses for webhooks) before queuing
-# a healing run — exactly the same way the dashboard's "Start Healing" button
-# does internally.
+# Shows the intended production flow: when this workflow's tests fail, it
+# POSTs a signed payload to code-healer's /webhook/github endpoint, which
+# verifies an HMAC-SHA256 signature (same convention GitHub itself uses for
+# webhooks) before queuing a healing run — exactly the same way the
+# dashboard's "Start Healing" button does internally.
 #
-# Required repo secrets, once code-healer is deployed:
-#   CODE_HEALER_WEBHOOK_URL    e.g. https://healer.example.com
+# Required repo secrets (Settings -> Secrets and variables -> Actions):
+#   CODE_HEALER_WEBHOOK_URL    the deployed instance, e.g. https://healer.example.com
 #   CODE_HEALER_WEBHOOK_SECRET must match GITHUB_WEBHOOK_SECRET in code-healer's .env
 #
-# Note: `workspace` below must be a path code-healer's host can read directly —
-# this template doesn't yet handle cloning the failing repo itself (no remote
-# checkout step exists in the backend yet).
+# Note: `workspace` below must be a path code-healer's backend container can
+# already read directly — this template doesn't clone the failing repo itself
+# (no remote checkout step exists in the backend yet), so it points at
+# code-healer's own bundled demo workspace.
 #
-# Manual-trigger only for now (workflow_dispatch) — this repo has no unit tests
-# yet (Phase 4) and no CODE_HEALER_WEBHOOK_URL configured, so running it on
-# every push would just fail the build and spam GitHub's failure-notification
-# emails for no reason. Switch back to `push`/`pull_request` once both exist.
+# Manual-trigger only (workflow_dispatch) — this repo's own test suite
+# normally passes, so `force_notify` lets you verify the webhook wiring on
+# demand without needing to actually break a test first.
 
 name: Notify code-healer on test failure
 
 on:
   workflow_dispatch:
+    inputs:
+      force_notify:
+        description: "Send the notification even if tests pass (verifies webhook wiring)"
+        type: boolean
+        default: false
 
 jobs:
   test:
@@ -45,15 +48,14 @@ jobs:
         continue-on-error: true
 
       - name: Notify code-healer on failure
-        if: steps.tests.outcome == 'failure'
+        if: steps.tests.outcome == 'failure' || inputs.force_notify
         env:
           CODE_HEALER_WEBHOOK_URL: ${{ secrets.CODE_HEALER_WEBHOOK_URL }}
           CODE_HEALER_WEBHOOK_SECRET: ${{ secrets.CODE_HEALER_WEBHOOK_SECRET }}
         run: |
           PAYLOAD=$(jq -n \
             --arg repo "${{ github.repository }}" \
-            --arg workspace "/srv/code-healer/workspace/${{ github.event.repository.name }}" \
-            '{repo: $repo, file_path: "", workspace: $workspace, changed_files: [], error_log: "See the failed CI run for full output"}')
+            '{repo: $repo, file_path: "calculator.py", workspace: "/app/demo/broken_code", changed_files: [], error_log: "See the failed CI run for full output"}')
 
           SIGNATURE="sha256=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 -hmac "$CODE_HEALER_WEBHOOK_SECRET" | sed 's/^.* //')"
 
