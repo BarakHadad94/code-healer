@@ -25,7 +25,10 @@ services:
       dockerfile: frontend/Dockerfile
     restart: unless-stopped
     ports:
-      - "80:80"
+      # Override with FRONTEND_PORT in .env if port 80 on the host is already
+      # taken by another site's reverse proxy (Nginx/Caddy) — that proxy then
+      # points a subdomain at this port instead of the container binding 80 directly.
+      - "${FRONTEND_PORT:-80}:80"
     depends_on:
       - backend
 

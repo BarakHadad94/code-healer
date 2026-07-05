@@ -54,6 +54,10 @@ export default function App() {
   const [demoWorkspaces, setDemoWorkspaces] = useState(null)
   const [runsLoading, setRunsLoading] = useState(true)
   const [runsError, setRunsError] = useState(false)
+  // Stored per-browser only (sessionStorage) — never shipped in the JS bundle.
+  // Lets the deployer unlock triggering on a public deployment without exposing
+  // the key to every visitor. Unused/blank when TRIGGER_API_KEY isn't set (local dev).
+  const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('ch_api_key') || '')
   const wsRef = useRef(null)
   const reasoningRef = useRef(null)
   const historyPollRef = useRef(null)
@@ -156,11 +160,15 @@ export default function App() {
       }
       const res = await fetch('/trigger', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { 'X-API-Key': apiKey } : {}),
+        },
         body: JSON.stringify(payload),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
+        if (res.status === 401) throw new Error('Invalid or missing API key — enter it above to unlock triggering')
         throw new Error(err.detail || `Server error ${res.status}`)
       }
       const data = await res.json()
@@ -241,9 +249,22 @@ export default function App() {
         background: '#161b22', border: '1px solid #30363d',
         borderRadius: 8, padding: 20, marginBottom: 24,
       }}>
-        <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8b949e', marginBottom: 14, textTransform: 'uppercase', letterSpacing: 1 }}>
-          Trigger Healing Run
-        </h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8b949e', textTransform: 'uppercase', letterSpacing: 1 }}>
+            Trigger Healing Run
+          </h2>
+          <input
+            type="password"
+            value={apiKey}
+            onChange={e => {
+              setApiKey(e.target.value)
+              sessionStorage.setItem('ch_api_key', e.target.value)
+            }}
+            placeholder="API key (only needed if deployment requires one)"
+            title="Only stored in this browser tab's session — never sent anywhere except /trigger on this site"
+            style={{ fontSize: 11, width: 260, padding: '4px 8px' }}
+          />
+        </div>
 
         {demoWorkspaces && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
