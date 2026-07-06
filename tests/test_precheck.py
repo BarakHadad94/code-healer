@@ -34,7 +34,7 @@ def test_pytest_fails(tmp_path):
         result = _run_pytest_sync(str(tmp_path), 30)
     assert result.passed is False
     assert result.exit_code == 1
-    assert "[exit 1]" in result.output
+    assert "1 failed" in result.output
 
 
 def test_pytest_timeout(tmp_path):
