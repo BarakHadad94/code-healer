@@ -184,11 +184,11 @@ Written after Docker so instructions match the final run path.
 
 Final technical step. **Same VPS as the apartment rental site** — new Caddy site block, no shared app process.
 
-- [x] **Deploy containers to VPS** (or backend + static frontend build) — backend + frontend running via `docker compose` on the VPS; verified with a real end-to-end healing run. Not yet reachable via a domain (still on a raw `IP:port`) — that's the next two bullets.
-- [ ] **Caddy** reverse proxy for `healer.<domain>`
-- [ ] **HTTPS** via Let's Encrypt
-- [ ] **Production secrets** — API keys, trigger auth; never committed to git
-- [ ] **GitHub webhook** (if not done in Phase 3) — point CI failures at production `/trigger`
+- [x] **Deploy containers to VPS** (or backend + static frontend build) — backend + frontend running via `docker compose` on the VPS; verified with a real end-to-end healing run.
+- [x] **Caddy** reverse proxy for `healer.<domain>` — new site block added to the shared Caddyfile alongside the rental site's; verified the rental site is unaffected.
+- [x] **HTTPS** via Let's Encrypt — Caddy issued this automatically in the same step as the reverse-proxy config above (no separate certbot/manual step needed); verified with a real cert check against the live site.
+- [x] **Production secrets** — API keys, trigger auth; never committed to git — server `.env` locked to `600`, audited git history (never committed, no leaked values), confirmed no key leakage in Caddy/backend logs, spending limit set on the Anthropic Console.
+- [x] **GitHub webhook** (if not done in Phase 3) — pointed `.github/workflows/notify-code-healer.yml` at the deployed instance via real repo secrets; verified with a live run — GitHub Actions signed and posted to production, which activated self-heal, fixed `calculator.py`, and pushed a real fix branch. Also caught and fixed an unrelated stale test assertion (`tests/test_precheck.py`) that was failing independently of this work.
 
 ---
 
