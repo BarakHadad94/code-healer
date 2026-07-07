@@ -61,6 +61,17 @@ export default function App() {
   const [apiKeyInput, setApiKeyInput] = useState(() => sessionStorage.getItem('ch_api_key') || '')
   const [keyRequired, setKeyRequired] = useState(false)
   const [keyStatus, setKeyStatus] = useState('idle') // idle | checking | valid | invalid
+  const [keyBadgeVisible, setKeyBadgeVisible] = useState(true)
+
+  // Flash "Key accepted" briefly, then clear the way for the button — no
+  // lingering UI once you're actually unlocked.
+  useEffect(() => {
+    if (keyStatus === 'valid') {
+      setKeyBadgeVisible(true)
+      const t = setTimeout(() => setKeyBadgeVisible(false), 2500)
+      return () => clearTimeout(t)
+    }
+  }, [keyStatus])
   const wsRef = useRef(null)
   const reasoningRef = useRef(null)
   const historyPollRef = useRef(null)
@@ -287,47 +298,9 @@ export default function App() {
         background: '#161b22', border: '1px solid #30363d',
         borderRadius: 8, padding: 20, marginBottom: 24,
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8b949e', textTransform: 'uppercase', letterSpacing: 1 }}>
-            Trigger Healing Run
-          </h2>
-
-          {keyRequired && keyStatus === 'valid' && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#3fb950' }}>
-              ✓ Key accepted
-              <button
-                onClick={() => { setKeyStatus('idle'); setApiKeyInput(apiKey) }}
-                style={{ background: 'none', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: 11, padding: 0, fontWeight: 400 }}
-              >
-                change
-              </button>
-            </span>
-          )}
-
-          {keyRequired && keyStatus !== 'valid' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input
-                type="password"
-                value={apiKeyInput}
-                onChange={e => setApiKeyInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') verifyKey(apiKeyInput) }}
-                placeholder="API key required to trigger"
-                title="Only stored in this browser tab's session — never sent anywhere except this site"
-                style={{ fontSize: 11, width: 220, padding: '4px 8px' }}
-              />
-              <button
-                onClick={() => verifyKey(apiKeyInput)}
-                disabled={keyStatus === 'checking'}
-                style={{ background: '#21262d', color: '#e6edf3', border: '1px solid #30363d', fontSize: 11, padding: '4px 12px' }}
-              >
-                {keyStatus === 'checking' ? '…' : 'Unlock'}
-              </button>
-              {keyStatus === 'invalid' && (
-                <span style={{ color: '#f85149', fontSize: 12 }}>✕ Invalid key</span>
-              )}
-            </div>
-          )}
-        </div>
+        <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8b949e', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>
+          Trigger Healing Run
+        </h2>
 
         {demoWorkspaces && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -386,6 +359,34 @@ export default function App() {
             placeholder="/absolute/path/to/workspace"
           />
         </label>
+        {keyRequired && keyStatus !== 'valid' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <input
+              type="password"
+              value={apiKeyInput}
+              onChange={e => setApiKeyInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') verifyKey(apiKeyInput) }}
+              placeholder="API key required to trigger"
+              title="Only stored in this browser tab's session — never sent anywhere except this site"
+              style={{ fontSize: 12, width: 240, padding: '5px 9px' }}
+            />
+            <button
+              onClick={() => verifyKey(apiKeyInput)}
+              disabled={keyStatus === 'checking'}
+              style={{ background: '#21262d', color: '#e6edf3', border: '1px solid #30363d', fontSize: 12, padding: '5px 14px' }}
+            >
+              {keyStatus === 'checking' ? '…' : 'Unlock'}
+            </button>
+            {keyStatus === 'invalid' && <KeyBadge tone="invalid">✕ Invalid key</KeyBadge>}
+          </div>
+        )}
+
+        {keyRequired && keyStatus === 'valid' && keyBadgeVisible && (
+          <div style={{ marginBottom: 10 }}>
+            <KeyBadge tone="valid">✓ Key accepted</KeyBadge>
+          </div>
+        )}
+
         <button
           onClick={startHealing}
           disabled={status === 'running' || !form.workspace || !form.file_path || (keyRequired && keyStatus !== 'valid')}
@@ -512,6 +513,17 @@ export default function App() {
       </div>
 
     </div>
+  )
+}
+
+function KeyBadge({ tone, children }) {
+  const { bg, color } = tone === 'valid'
+    ? { bg: '#0d4429', color: '#3fb950' }
+    : { bg: '#3d1212', color: '#f85149' }
+  return (
+    <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: bg, color: color }}>
+      {children}
+    </span>
   )
 }
 
