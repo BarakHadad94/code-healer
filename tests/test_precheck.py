@@ -1,7 +1,7 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from backend.precheck import PrecheckResult, _run_pytest_sync, _run_ruff_sync
+from backend.precheck import _run_pytest_sync, _run_ruff_sync
 
 
 def _fake_proc(returncode, stdout="", stderr=""):
