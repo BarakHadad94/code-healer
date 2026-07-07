@@ -128,6 +128,17 @@ def _require_trigger_key(x_api_key: Optional[str] = Header(None)) -> None:
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 
+@app.get("/auth/verify", dependencies=[Depends(_require_trigger_key)])
+def verify_trigger_key():
+    """
+    Side-effect-free check for whether a given X-API-Key (if any) is accepted.
+    Lets the dashboard gate the Start Healing button — and validate a key the
+    user just typed — without spending a real run. Mirrors /trigger's auth
+    exactly: succeeds with no key at all when TRIGGER_API_KEY isn't configured.
+    """
+    return {"ok": True}
+
+
 def _queue_healing_run(
     body: TriggerRequest,
     background_tasks: BackgroundTasks,

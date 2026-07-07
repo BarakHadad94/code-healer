@@ -56,8 +56,11 @@ export default function App() {
   const [runsError, setRunsError] = useState(false)
   // Stored per-browser only (sessionStorage) — never shipped in the JS bundle.
   // Lets the deployer unlock triggering on a public deployment without exposing
-  // the key to every visitor. Unused/blank when TRIGGER_API_KEY isn't set (local dev).
+  // the key to every visitor. Unused when TRIGGER_API_KEY isn't set (local dev).
   const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('ch_api_key') || '')
+  const [apiKeyInput, setApiKeyInput] = useState(() => sessionStorage.getItem('ch_api_key') || '')
+  const [keyRequired, setKeyRequired] = useState(false)
+  const [keyStatus, setKeyStatus] = useState('idle') // idle | checking | valid | invalid
   const wsRef = useRef(null)
   const reasoningRef = useRef(null)
   const historyPollRef = useRef(null)
@@ -70,6 +73,7 @@ export default function App() {
     setRunsLoading(true)
     fetchHistory()
     fetchDemoWorkspaces()
+    checkKeyRequirement()
     return () => { if (historyPollRef.current) clearInterval(historyPollRef.current) }
   }, [])
 
@@ -80,6 +84,40 @@ export default function App() {
       .catch(() => {
         if (retries > 0) setTimeout(() => fetchDemoWorkspaces(retries - 1, delay), delay)
       })
+  }
+
+  // Finds out whether this deployment enforces a trigger key at all (it doesn't
+  // in local dev). If a key was already saved from a previous visit, re-checks
+  // it silently so returning users don't have to re-type it.
+  function checkKeyRequirement(retries = 25, delay = 1000) {
+    fetch('/auth/verify')
+      .then(r => {
+        if (r.ok) {
+          setKeyRequired(false)
+        } else if (r.status === 401) {
+          setKeyRequired(true)
+          if (apiKey) verifyKey(apiKey)
+        }
+      })
+      .catch(() => {
+        if (retries > 0) setTimeout(() => checkKeyRequirement(retries - 1, delay), delay)
+      })
+  }
+
+  function verifyKey(key) {
+    if (!key) { setKeyStatus('invalid'); return }
+    setKeyStatus('checking')
+    fetch('/auth/verify', { headers: { 'X-API-Key': key } })
+      .then(r => {
+        if (r.ok) {
+          setApiKey(key)
+          sessionStorage.setItem('ch_api_key', key)
+          setKeyStatus('valid')
+        } else {
+          setKeyStatus('invalid')
+        }
+      })
+      .catch(() => setKeyStatus('invalid'))
   }
 
   function fetchHistory() {
@@ -249,21 +287,46 @@ export default function App() {
         background: '#161b22', border: '1px solid #30363d',
         borderRadius: 8, padding: 20, marginBottom: 24,
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8b949e', textTransform: 'uppercase', letterSpacing: 1 }}>
             Trigger Healing Run
           </h2>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={e => {
-              setApiKey(e.target.value)
-              sessionStorage.setItem('ch_api_key', e.target.value)
-            }}
-            placeholder="API key (only needed if deployment requires one)"
-            title="Only stored in this browser tab's session — never sent anywhere except /trigger on this site"
-            style={{ fontSize: 11, width: 260, padding: '4px 8px' }}
-          />
+
+          {keyRequired && keyStatus === 'valid' && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#3fb950' }}>
+              ✓ Key accepted
+              <button
+                onClick={() => { setKeyStatus('idle'); setApiKeyInput(apiKey) }}
+                style={{ background: 'none', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: 11, padding: 0, fontWeight: 400 }}
+              >
+                change
+              </button>
+            </span>
+          )}
+
+          {keyRequired && keyStatus !== 'valid' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="password"
+                value={apiKeyInput}
+                onChange={e => setApiKeyInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') verifyKey(apiKeyInput) }}
+                placeholder="API key required to trigger"
+                title="Only stored in this browser tab's session — never sent anywhere except this site"
+                style={{ fontSize: 11, width: 220, padding: '4px 8px' }}
+              />
+              <button
+                onClick={() => verifyKey(apiKeyInput)}
+                disabled={keyStatus === 'checking'}
+                style={{ background: '#21262d', color: '#e6edf3', border: '1px solid #30363d', fontSize: 11, padding: '4px 12px' }}
+              >
+                {keyStatus === 'checking' ? '…' : 'Unlock'}
+              </button>
+              {keyStatus === 'invalid' && (
+                <span style={{ color: '#f85149', fontSize: 12 }}>✕ Invalid key</span>
+              )}
+            </div>
+          )}
         </div>
 
         {demoWorkspaces && (
@@ -325,7 +388,8 @@ export default function App() {
         </label>
         <button
           onClick={startHealing}
-          disabled={status === 'running' || !form.workspace || !form.file_path}
+          disabled={status === 'running' || !form.workspace || !form.file_path || (keyRequired && keyStatus !== 'valid')}
+          title={keyRequired && keyStatus !== 'valid' ? 'Enter and unlock the API key above first' : undefined}
           style={{ background: '#238636', color: '#fff' }}
         >
           {status === 'running' ? 'Healing…' : 'Start Healing'}
