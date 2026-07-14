@@ -6,6 +6,8 @@ in an isolated Docker sandbox, rewrites the faulty code, re-runs the tests to ve
 the fix, and pushes the repaired code back onto a new branch. All of this is streamed
 live to a dashboard so you can watch the agent think, run tools, and iterate.
 
+![code-healer demo — self-heal run](docs/demo.gif)
+
 ## How it works
 
 **1. Trigger** — a healing run starts either from the dashboard form (simulating a CI
